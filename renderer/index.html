@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>حضور الطلبة</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1 id="appTitle">حضور الطلبة</h1>
+  <div id="clock"></div>
+</header>
+
+<nav>
+  <button class="tab active" data-tab="scan">📇 تسجيل الحضور</button>
+  <button class="tab" data-tab="students">👨‍🎓 الطلاب</button>
+  <button class="tab" data-tab="log">📋 سجل الحضور</button>
+  <button class="tab" data-tab="reports">📊 التقارير والغياب</button>
+  <button class="tab" data-tab="settings">⚙️ الإعدادات</button>
+</nav>
+
+<main>
+  <!-- تسجيل الحضور -->
+  <section id="scan" class="panel active">
+    <form id="noSession" class="card">
+      <h3>لا توجد محاضرة جارية — ابدأ محاضرة جديدة</h3>
+      <label>اسم المادة / المحاضرة<input id="sesSubject" required></label>
+      <label>المجموعة (الصف / الشعبة)<select id="sesGroup"><option value="">كل الطلاب</option></select></label>
+      <label>يُعتبر متأخراً بعد (دقيقة من بداية المحاضرة)<input type="number" id="sesLate" min="0" value="10"></label>
+      <button class="btn primary" type="submit">▶ بدء المحاضرة</button>
+    </form>
+
+    <div id="activeSession" hidden>
+      <div class="session-bar">
+        <div><b id="sesTitle"></b><span id="sesMeta"></span></div>
+        <button class="btn danger" id="sesEnd">⏹ إنهاء المحاضرة</button>
+      </div>
+      <div class="scan-box">
+        <p class="hint">يمرّر كل طالب بطاقته على القارئ (يجب أن يكون المؤشر داخل الحقل)</p>
+        <input id="scanInput" autocomplete="off" placeholder="بانتظار قراءة البطاقة...">
+        <div id="scanResult" class="result idle">بانتظار البطاقة</div>
+      </div>
+      <div class="stats">
+        <div class="stat"><b id="stPresent">0</b><span>حاضر</span></div>
+        <div class="stat"><b id="stLate">0</b><span>متأخر</span></div>
+        <div class="stat"><b id="stAbsent">0</b><span>لم يحضر بعد</span></div>
+      </div>
+      <h3>آخر التسجيلات</h3>
+      <table><thead><tr><th>الوقت</th><th>الطالب</th><th>الصف</th><th>الحالة</th></tr></thead>
+      <tbody id="recentBody"></tbody></table>
+    </div>
+  </section>
+
+  <!-- الطلاب -->
+  <section id="students" class="panel">
+    <form id="studentForm" class="card">
+      <input type="hidden" id="stId">
+      <label>اسم الطالب<input id="stName" required></label>
+      <label>الصف / الشعبة<input id="stGrade" required></label>
+      <label>رقم البطاقة (اضغط في الحقل ثم مرّر البطاقة)<input id="stUid" autocomplete="off"></label>
+      <div class="row">
+        <button class="btn primary" type="submit">حفظ</button>
+        <button class="btn" type="button" id="stCancel">إلغاء / جديد</button>
+      </div>
+    </form>
+    <input id="stSearch" class="search" placeholder="🔍 بحث بالاسم أو الصف أو رقم البطاقة">
+    <table><thead><tr><th>#</th><th>الاسم</th><th>الصف</th><th>رقم البطاقة</th><th>إجراءات</th></tr></thead>
+    <tbody id="studentsBody"></tbody></table>
+  </section>
+
+  <!-- السجل -->
+  <section id="log" class="panel">
+    <div class="toolbar">
+      <label>التاريخ <input type="date" id="logDate"></label>
+      <label>المحاضرة <select id="logSession"></select></label>
+      <input id="logSearch" class="search" placeholder="🔍 بحث بالاسم">
+      <button class="btn" id="logExport">تصدير CSV</button>
+    </div>
+    <table><thead><tr><th>#</th><th>الطالب</th><th>الصف</th><th>المحاضرة</th><th>الوقت</th><th>الحالة</th><th></th></tr></thead>
+    <tbody id="logBody"></tbody></table>
+  </section>
+
+  <!-- التقارير -->
+  <section id="reports" class="panel">
+    <div class="toolbar">
+      <label>التاريخ <input type="date" id="repDate"></label>
+      <label>المحاضرة <select id="repSession"></select></label>
+      <button class="btn" id="repExport">تصدير CSV</button>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="rpPresent">0</b><span>حاضر</span></div>
+      <div class="stat"><b id="rpLate">0</b><span>متأخر</span></div>
+      <div class="stat"><b id="rpAbsent">0</b><span>غائب</span></div>
+    </div>
+    <h3>قائمة الغائبين</h3>
+    <table><thead><tr><th>#</th><th>الاسم</th><th>الصف</th><th></th></tr></thead>
+    <tbody id="absentBody"></tbody></table>
+  </section>
+
+  <!-- الإعدادات -->
+  <section id="settings" class="panel">
+    <div class="card">
+      <label>اسم المدرسة / العنوان<input id="setSchool"></label>
+      <label>مدة السماح الافتراضية قبل اعتبار الطالب متأخراً (دقيقة)<input type="number" min="0" id="setLate"></label>
+      <button class="btn primary" id="setSave">حفظ الإعدادات</button>
+    </div>
+    <div class="card">
+      <h3>النسخ الاحتياطي</h3>
+      <div class="row">
+        <button class="btn" id="bkExport">تصدير نسخة احتياطية</button>
+        <button class="btn" id="bkImport">استيراد نسخة احتياطية</button>
+      </div>
+      <p class="hint">مكان حفظ البيانات: <span id="dataPath" dir="ltr"></span></p>
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>

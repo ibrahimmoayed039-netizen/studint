@@ -1,0 +1,23 @@
+{
+  "name": "student-attendance-nfc",
+  "version": "1.0.0",
+  "description": "برنامج تسجيل حضور الطلبة بقارئ بطاقات NFC",
+  "main": "main.js",
+  "author": "Attendance",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.attendance.nfc",
+    "productName": "حضور الطلبة",
+    "files": ["main.js", "preload.js", "renderer/**/*"],
+    "win": { "target": ["nsis", "portable"] },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+  }
+}
