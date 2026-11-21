@@ -10,7 +10,7 @@ const DEFAULT_DB = {
   sessions: [],
   users: [],
   schedule: [],
-  settings: { schoolName: 'حضور الطلبة', lateMinutes: 10, backupKeepDays: 30 }
+  settings: { schoolName: 'حضور الطلبة', lateMinutes: 10, backupKeepDays: 30, autoSchedule: false, lectureMinutes: 45, breakMinutes: 10 }
 };
 
 function hashPassword(password, salt) {

@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div id="scene"><div class="grid"></div><div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div></div>
 <header>
   <h1 id="appTitle">حضور الطلبة</h1>
   <div class="header-right">
@@ -41,6 +42,7 @@
 <main id="mainArea" hidden>
   <!-- تسجيل الحضور -->
   <section id="scan" class="panel active">
+    <div id="breakBanner" class="break-banner" hidden></div>
     <div id="todaySchedule" class="card" hidden>
       <h3>حصص اليوم (<span id="todayDayName"></span>)</h3>
       <div id="todayScheduleList"></div>
@@ -56,7 +58,7 @@
     <div id="activeSession" hidden>
       <div class="session-bar">
         <div><b id="sesTitle"></b><span id="sesMeta"></span></div>
-        <button class="btn danger" id="sesEnd">⏹ إنهاء المحاضرة</button>
+        <div class="row" style="margin:0"><button class="btn" id="kioskBtn">⛶ وضع ملء الشاشة</button><button class="btn danger" id="sesEnd">⏹ إنهاء المحاضرة</button></div>
       </div>
       <div class="scan-box">
         <p class="hint">يمرّر كل طالب بطاقته على القارئ (يجب أن يكون المؤشر داخل الحقل)</p>
@@ -71,6 +73,12 @@
         <div class="stat"><b id="stLate">0</b><span>متأخر</span></div>
         <div class="stat"><b id="stAbsent">0</b><span>لم يحضر بعد</span></div>
       </div>
+      <div class="card manual-card">
+        <h3>✋ تسجيل حضور يدوي (لمن نسي بطاقته)</h3>
+        <input id="manSearch" autocomplete="off" placeholder="🔍 ابحث بالاسم أو الصف...">
+        <div id="manList" class="man-list"></div>
+      </div>
+      <div class="row"><button class="btn primary" id="pickBtn">🎲 اختيار طالب عشوائي من الحاضرين</button></div>
       <h3>آخر التسجيلات</h3>
       <table><thead><tr><th>الوقت</th><th>الطالب</th><th>الصف</th><th>الحالة</th></tr></thead>
       <tbody id="recentBody"></tbody></table>
@@ -94,14 +102,19 @@
       </label>
       <label>اسم المادة / المحاضرة<input id="scSubject" required></label>
       <label>المجموعة (الصف / الشعبة)<select id="scGroup"><option value="">كل الطلاب</option></select></label>
-      <label>وقت البدء<input type="time" id="scTime" required></label>
+      <div class="row2">
+        <label>وقت البدء<input type="time" id="scTime" required></label>
+        <label>وقت الانتهاء (اختياري)<input type="time" id="scEnd"></label>
+      </div>
+      <label class="check"><input type="checkbox" id="scAuto" checked> بدء وإنهاء هذه الحصة تلقائياً حسب الجدول</label>
+      <p class="hint">إن تركت وقت الانتهاء فارغاً يُحسب من «مدة الحصة الافتراضية» في الإعدادات. الاستراحة تُحسب تلقائياً بين نهاية حصة وبداية التي تليها.</p>
       <label>يُعتبر متأخراً بعد (دقيقة)<input type="number" id="scLate" min="0" value="10"></label>
       <div class="row">
         <button class="btn primary" type="submit">حفظ</button>
         <button class="btn" type="button" id="scCancel">إلغاء / جديد</button>
       </div>
     </form>
-    <table><thead><tr><th>#</th><th>اليوم</th><th>المادة</th><th>المجموعة</th><th>الوقت</th><th>السماح</th><th>إجراءات</th></tr></thead>
+    <table><thead><tr><th>#</th><th>اليوم</th><th>المادة</th><th>المجموعة</th><th>الوقت</th><th>السماح</th><th>تلقائي</th><th>إجراءات</th></tr></thead>
     <tbody id="scheduleBody"></tbody></table>
   </section>
 
@@ -206,6 +219,14 @@
       <button class="btn primary" id="setSave">حفظ الإعدادات</button>
     </div>
     <div class="card">
+      <h3>التشغيل التلقائي للمحاضرات (اختياري)</h3>
+      <label class="check"><input type="checkbox" id="setAuto"> تفعيل بدء وإنهاء المحاضرات تلقائياً حسب الجدول الأسبوعي</label>
+      <label>مدة الحصة الافتراضية (دقيقة)<input type="number" min="5" id="setLectureMin" value="45"></label>
+      <label>مدة الاستراحة الافتراضية بين الحصص (دقيقة)<input type="number" min="0" id="setBreakMin" value="10"></label>
+      <p class="hint">عند التفعيل تبدأ الحصة تلقائياً في وقتها وتنتهي في وقت انتهائها، وتظهر شاشة الاستراحة بين الحصص. يعمل ذلك أثناء فتح البرنامج وتسجيل الدخول، وهو معطّل افتراضياً ويمكن استثناء أي حصة من نافذة الجدول.</p>
+      <button class="btn primary" id="setSaveAuto">حفظ</button>
+    </div>
+    <div class="card">
       <h3>النسخ الاحتياطي التلقائي</h3>
       <p class="hint">يأخذ البرنامج نسخة احتياطية تلقائياً مرة واحدة كل يوم عند فتح البرنامج، ويحذف القديم منها تلقائياً.</p>
       <label>عدد الأيام المحتفظ بنسخها<input type="number" id="setBackupDays" min="1" value="30"></label>
@@ -225,7 +246,42 @@
   </section>
 </main>
 
+<div id="kiosk" class="kiosk" data-state="idle" hidden>
+  <div class="k-top">
+    <div><div class="k-school" id="kSchool"></div><div class="k-subject" id="kSubject"></div><div class="k-meta" id="kMeta"></div></div>
+    <div class="k-clock" id="kClock"></div>
+  </div>
+  <div class="k-center">
+    <div class="k-photo-wrap">
+      <div class="k-ring"></div><div class="k-ring r2"></div>
+      <img id="kPhoto" class="k-photo" alt="" hidden>
+      <div id="kIcon" class="k-icon">📇</div>
+    </div>
+    <div class="k-name" id="kName">مرّر بطاقتك على القارئ</div>
+    <div class="k-sub" id="kSub"></div>
+  </div>
+  <div class="k-bottom">
+    <div class="k-stat ok"><b id="kPresent">0</b><span>حاضر</span></div>
+    <div class="k-stat late"><b id="kLate">0</b><span>متأخر</span></div>
+    <div class="k-stat bad"><b id="kAbsent">0</b><span>لم يحضر بعد</span></div>
+    <button class="btn primary" id="kPick">🎲 اختيار عشوائي</button>
+    <button class="btn" id="kExit">✕ خروج (Esc)</button>
+  </div>
+</div>
+<div id="picker" class="picker" hidden>
+  <div class="p-card">
+    <div class="p-title">🎲 اختيار طالب عشوائي</div>
+    <div class="p-photo-wrap"><img id="pPhoto" class="p-photo" alt="" hidden><div id="pIcon" class="p-icon">🎲</div></div>
+    <div id="pName" class="p-name">…</div>
+    <div id="pSub" class="p-sub"></div>
+    <div class="row" style="justify-content:center;margin:6px 0 0">
+      <button class="btn primary" id="pAgain">🎲 اختيار آخر</button>
+      <button class="btn" id="pClose">إغلاق</button>
+    </div>
+  </div>
+</div>
 <div id="toast"></div>
 <script src="app.js"></script>
+<script src="fx.js"></script>
 </body>
 </html>

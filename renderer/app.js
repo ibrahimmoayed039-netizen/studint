@@ -76,11 +76,11 @@ function statusFor(ses) {
   return mins > ses.lateMin ? 'late' : 'present';
 }
 
-function record(ses, student, status) {
+function record(ses, student, status, manual) {
   const rec = {
     id: uid(), sessionId: ses.id, subject: ses.subject, studentId: student.id,
     studentName: student.name, grade: student.grade,
-    date: ses.date, time: nowTime(), status
+    date: ses.date, time: nowTime(), status, manual: !!manual
   };
   db.attendance.push(rec);
   persist();
@@ -114,7 +114,130 @@ $('#sesEnd').addEventListener('click', () => {
   persist(); renderScan();
 });
 
-function focusScan() { setTimeout(() => { if (activeSession()) $('#scanInput').focus(); }, 50); }
+
+/* ---------- وضع ملء الشاشة للمسح ---------- */
+let kioskTimer = null;
+const KIOSK_ICONS = { idle: '📇', ok: '✓', late: '⏰', dup: '↺', bad: '✕' };
+function kioskOn() { return !$('#kiosk').hidden; }
+function updateKiosk() {
+  const ses = activeSession(); if (!ses || !kioskOn()) return;
+  $('#kSchool').textContent = db.settings.schoolName || 'حضور الطلبة';
+  $('#kSubject').textContent = ses.subject;
+  $('#kMeta').textContent = `${ses.group || 'كل الطلاب'} — بدأت ${ses.time.slice(0, 5)}`;
+  const st = sessionStats(ses);
+  $('#kPresent').textContent = st.present; $('#kLate').textContent = st.late; $('#kAbsent').textContent = st.absent.length;
+}
+function kioskIdle() {
+  const k = $('#kiosk'); k.dataset.state = 'idle';
+  $('#kPhoto').hidden = true; $('#kPhoto').removeAttribute('src');
+  $('#kIcon').hidden = false; $('#kIcon').textContent = KIOSK_ICONS.idle;
+  $('#kName').textContent = 'مرّر بطاقتك على القارئ'; $('#kSub').textContent = '';
+}
+function kioskShow(cls, title, sub, photo) {
+  if (!kioskOn()) return;
+  const k = $('#kiosk'); k.dataset.state = cls;
+  $('#kName').textContent = title; $('#kSub').textContent = sub || '';
+  if (photo) { $('#kPhoto').src = photo; $('#kPhoto').hidden = false; $('#kIcon').hidden = true; }
+  else { $('#kPhoto').hidden = true; $('#kPhoto').removeAttribute('src'); $('#kIcon').hidden = false; $('#kIcon').textContent = KIOSK_ICONS[cls] || '📇'; }
+  k.classList.remove('flash'); void k.offsetWidth; k.classList.add('flash');
+  clearTimeout(kioskTimer); kioskTimer = setTimeout(kioskIdle, 4000);
+}
+function enterKiosk() {
+  if (!activeSession()) return;
+  $('#kiosk').hidden = false; document.body.classList.add('kiosk-on');
+  kioskIdle(); updateKiosk();
+  try { const p = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); if (p && p.catch) p.catch(() => {}); } catch {}
+  focusScan();
+}
+function exitKiosk() {
+  if (!kioskOn()) return;
+  clearTimeout(kioskTimer);
+  $('#kiosk').hidden = true; document.body.classList.remove('kiosk-on');
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  focusScan();
+}
+$('#kioskBtn').addEventListener('click', enterKiosk);
+$('#kExit').addEventListener('click', exitKiosk);
+document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if (!$('#picker').hidden) { closePicker(); return; } exitKiosk(); });
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) exitKiosk(); });
+setInterval(() => { if (kioskOn()) $('#kClock').textContent = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }); }, 1000);
+
+
+/* ---------- حضور يدوي لمن نسي بطاقته ---------- */
+function renderManual() {
+  const ses = activeSession(); if (!ses) return;
+  const q = $('#manSearch').value.trim().toLowerCase();
+  const attended = new Set(db.attendance.filter((a) => a.sessionId === ses.id).map((a) => a.studentId));
+  const pool = db.students.filter((st) => (!ses.group || st.grade === ses.group) && !attended.has(st.id)
+    && (!q || st.name.toLowerCase().includes(q) || String(st.grade).toLowerCase().includes(q)));
+  const shown = pool.slice(0, 6);
+  $('#manList').innerHTML = shown.length
+    ? shown.map((st) => `<div class="man-item">
+        ${st.photo ? `<img class="thumb" src="${esc(st.photo)}" alt="">` : '<span class="thumb ph">👤</span>'}
+        <div><b>${esc(st.name)}</b><span>${esc(st.grade)}</span></div>
+        <button class="btn sm primary" data-id="${st.id}">✓ تسجيل حاضر</button></div>`).join('')
+      + (pool.length > shown.length ? `<p class="hint">يُعرض ${shown.length} من ${pool.length} — اكتب للبحث</p>` : '')
+    : `<p class="empty">${q ? 'لا توجد نتائج' : 'كل الطلاب مسجّلون ✅'}</p>`;
+}
+$('#manSearch').addEventListener('input', renderManual);
+$('#manSearch').addEventListener('blur', () => setTimeout(focusScan, 150));
+$('#manList').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  const ses = activeSession(); if (!ses) return;
+  const st = db.students.find((x) => x.id === b.dataset.id); if (!st) return;
+  if (db.attendance.some((a) => a.sessionId === ses.id && a.studentId === st.id)) return renderManual();
+  const status = statusFor(ses);
+  record(ses, st, status, true);
+  beep(status === 'late' ? 600 : 900, 180);
+  showResult(status === 'late' ? 'late' : 'ok', st.name, `${st.grade} — ${status === 'late' ? 'متأخر' : 'حضور يدوي'}`, st.photo);
+  toast(`تم تسجيل ${st.name} يدوياً`);
+  renderScan();
+});
+
+/* ---------- اختيار طالب عشوائي من الحاضرين ---------- */
+const pickedBy = {};
+let pickTimer = null;
+function presentPool(ses) {
+  return db.attendance.filter((a) => a.sessionId === ses.id).map((a) => {
+    const st = db.students.find((x) => x.id === a.studentId);
+    return { id: a.studentId, name: st ? st.name : a.studentName, grade: st ? st.grade : a.grade, photo: st ? st.photo : '' };
+  });
+}
+function closePicker() { clearTimeout(pickTimer); $('#picker').hidden = true; focusScan(); }
+function runPicker() {
+  const ses = activeSession(); if (!ses) return;
+  const all = presentPool(ses);
+  if (!all.length) return toast('لا يوجد طلاب حاضرون بعد');
+  const done = pickedBy[ses.id] || (pickedBy[ses.id] = []);
+  let pool = all.filter((s) => !done.includes(s.id));
+  if (!pool.length) { done.length = 0; pool = all; }
+  const winner = pool[Math.floor(Math.random() * pool.length)];
+  done.push(winner.id);
+  const box = $('#picker'); box.hidden = false; clearTimeout(pickTimer);
+  const card = box.querySelector('.p-card'); card.classList.remove('final'); card.classList.add('spin');
+  $('#pPhoto').hidden = true; $('#pIcon').hidden = false; $('#pIcon').textContent = '🎲'; $('#pSub').textContent = '';
+  $('#pAgain').disabled = true;
+  let step = 0; const steps = 22;
+  (function tick() {
+    if (step >= steps) {
+      card.classList.remove('spin'); card.classList.add('final');
+      $('#pName').textContent = winner.name; $('#pSub').textContent = winner.grade + (all.length > 1 ? ` — متبقٍ ${pool.length - 1} لم يُختاروا` : '');
+      if (winner.photo) { $('#pPhoto').src = winner.photo; $('#pPhoto').hidden = false; $('#pIcon').hidden = true; }
+      else { $('#pIcon').textContent = '🎉'; }
+      beep(880, 220); $('#pAgain').disabled = false; return;
+    }
+    $('#pName').textContent = all[Math.floor(Math.random() * all.length)].name;
+    $('#pName').classList.remove('tick'); void $('#pName').offsetWidth; $('#pName').classList.add('tick');
+    beep(300 + step * 20, 40);
+    step++; pickTimer = setTimeout(tick, 60 + step * step * 0.55);
+  })();
+}
+$('#pickBtn').addEventListener('click', runPicker);
+$('#kPick').addEventListener('click', runPicker);
+$('#pAgain').addEventListener('click', runPicker);
+$('#pClose').addEventListener('click', closePicker);
+
+function focusScan() { setTimeout(() => { if (activeSession() && !$('#manSearch').matches(':focus') && $('#picker').hidden) $('#scanInput').focus(); }, 50); }
 $('#scanInput').addEventListener('blur', () => {
   if ($('#scan').classList.contains('active')) focusScan();
 });
@@ -127,6 +250,7 @@ $('#scanInput').addEventListener('keydown', (e) => {
 });
 
 function showResult(cls, title, sub, photo) {
+  kioskShow(cls, title, sub, photo);
   const r = $('#scanResult');
   r.className = 'result ' + cls;
   const img = $('#scanPhoto');
@@ -156,18 +280,20 @@ function renderScan() {
   $('#noSession').hidden = !!ses;
   $('#activeSession').hidden = !ses;
   if (!ses) {
+    exitKiosk();
     fillGroups(); $('#sesLate').value = db.settings.lateMinutes ?? 10;
-    renderTodaySchedule();
+    renderTodaySchedule(); renderBreak();
     return;
   }
-  $('#todaySchedule').hidden = true;
+  $('#todaySchedule').hidden = true; $('#breakBanner').hidden = true;
+  updateKiosk(); renderManual();
   $('#sesTitle').textContent = ses.subject;
   $('#sesMeta').textContent = `بدأت ${ses.time.slice(0, 5)} — ${ses.group || 'كل الطلاب'} — التأخير بعد ${ses.lateMin} دقيقة`;
   const { recs, present, late, absent } = sessionStats(ses);
   $('#stPresent').textContent = present; $('#stLate').textContent = late; $('#stAbsent').textContent = absent.length;
   const recent = recs.slice(-10).reverse();
   $('#recentBody').innerHTML = recent.length
-    ? recent.map((a) => `<tr><td>${a.time.slice(0, 5)}</td><td>${esc(a.studentName)}</td><td>${esc(a.grade)}</td><td>${statusBadge(a.status)}</td></tr>`).join('')
+    ? recent.map((a) => `<tr><td>${a.time.slice(0, 5)}</td><td>${esc(a.studentName)}</td><td>${esc(a.grade)}</td><td>${statusBadge(a.status)}${a.manual ? ' <span class="badge manual">يدوي</span>' : ''}</td></tr>`).join('')
     : '<tr><td colspan="4" class="empty">لم يسجل أحد بعد</td></tr>';
 }
 
@@ -175,7 +301,75 @@ function renderScan() {
 const DAY_NAMES = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
 const myScheduleOf = () => db.schedule.filter((s) => s.ownerId === currentUser.id);
 
-function resetScheduleForm() { $('#scheduleForm').reset(); $('#scId').value = ''; $('#scLate').value = 10; }
+/* ---------- أدوات الوقت والتشغيل التلقائي ---------- */
+const toMin = (t) => { const [h, m] = String(t || '0:0').split(':').map(Number); return h * 60 + m; };
+const fromMin = (n) => { n = ((n % 1440) + 1440) % 1440; return `${pad(Math.floor(n / 60))}:${pad(n % 60)}`; };
+const lectureLen = () => Number(db.settings.lectureMinutes) || 45;
+const breakLen = () => Number(db.settings.breakMinutes) >= 0 ? Number(db.settings.breakMinutes) : 10;
+const entryEnd = (s) => s.endTime || fromMin(toMin(s.time) + lectureLen());
+const todayList = () => myScheduleOf().filter((s) => s.day === new Date().getDay()).sort((a, b) => a.time.localeCompare(b.time));
+const myActive = () => db.sessions.find((s) => s.active && s.createdBy === currentUser.id);
+
+function suggestTime() {
+  if ($('#scId').value || $('#scTime').value) return;
+  const day = Number($('#scDay').value);
+  const same = myScheduleOf().filter((s) => s.day === day).sort((a, b) => a.time.localeCompare(b.time));
+  if (!same.length) return;
+  const last = same[same.length - 1];
+  $('#scTime').value = fromMin(toMin(entryEnd(last)) + breakLen());
+}
+function resetScheduleForm() {
+  $('#scheduleForm').reset(); $('#scId').value = ''; $('#scLate').value = 10; $('#scAuto').checked = true;
+  suggestTime();
+}
+$('#scDay').addEventListener('change', () => { if (!$('#scId').value) { $('#scTime').value = ''; suggestTime(); } });
+
+function renderBreak() {
+  const box = $('#breakBanner');
+  if (!currentUser || !db.settings.autoSchedule || activeSession()) { box.hidden = true; return; }
+  const now = new Date(); const nm = now.getHours() * 60 + now.getMinutes();
+  const list = todayList().filter((s) => s.auto !== false);
+  const prev = list.filter((s) => toMin(entryEnd(s)) <= nm).pop();
+  const next = list.find((s) => toMin(s.time) > nm);
+  if (!next) { box.hidden = true; return; }
+  const wait = toMin(next.time) - nm;
+  box.hidden = false;
+  box.innerHTML = prev
+    ? `<span class="ic">☕</span><div><b>استراحة</b><span>تنتهي بعد ${wait} دقيقة — المحاضرة القادمة «${esc(next.subject)}» الساعة ${next.time}</span></div>`
+    : `<span class="ic">⏳</span><div><b>المحاضرة القادمة: ${esc(next.subject)}</b><span>تبدأ تلقائياً الساعة ${next.time} (بعد ${wait} دقيقة)</span></div>`;
+}
+
+function autoTick() {
+  if (!currentUser || !db.settings.autoSchedule) { renderBreak(); return; }
+  const now = new Date(); const nm = now.getHours() * 60 + now.getMinutes();
+  let changed = false;
+  // إنهاء تلقائي
+  db.sessions.forEach((ses) => {
+    if (!(ses.active && ses.createdBy === currentUser.id && ses.autoEnd && ses.scheduleId)) return;
+    const e = db.schedule.find((x) => x.id === ses.scheduleId); if (!e) return;
+    if (ses.date !== todayStr() || nm >= toMin(entryEnd(e))) {
+      ses.active = false; ses.endTime = entryEnd(e) + ':00'; changed = true;
+      toast(`انتهت محاضرة «${ses.subject}» تلقائياً`);
+    }
+  });
+  // بدء تلقائي
+  if (!myActive()) {
+    const cand = todayList().find((s) => s.auto !== false && nm >= toMin(s.time) && nm < toMin(entryEnd(s))
+      && !db.sessions.some((x) => x.scheduleId === s.id && x.date === todayStr()));
+    if (cand) {
+      const startTs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), Math.floor(toMin(cand.time) / 60), toMin(cand.time) % 60).getTime();
+      db.sessions.push({
+        id: uid(), subject: cand.subject, group: cand.group, lateMin: cand.lateMin,
+        date: todayStr(), time: cand.time + ':00', startTs, active: true, autoEnd: true,
+        createdBy: currentUser.id, createdByName: currentUser.name, scheduleId: cand.id
+      });
+      changed = true; toast(`بدأت محاضرة «${cand.subject}» تلقائياً`);
+    }
+  }
+  if (changed) { persist(); renderScan(); if ($('#scan').classList.contains('active')) focusScan(); }
+  else renderBreak();
+}
+setInterval(autoTick, 15000);
 $('#scCancel').addEventListener('click', resetScheduleForm);
 
 function fillScheduleGroups() {
@@ -190,8 +384,10 @@ $('#scheduleForm').addEventListener('submit', (e) => {
   const entry = {
     day: Number($('#scDay').value), subject: $('#scSubject').value.trim(),
     group: $('#scGroup').value, time: $('#scTime').value,
-    lateMin: Number($('#scLate').value) || 0
+    lateMin: Number($('#scLate').value) || 0,
+    endTime: $('#scEnd').value || '', auto: $('#scAuto').checked
   };
+  if (entry.endTime && toMin(entry.endTime) <= toMin(entry.time)) return toast('وقت الانتهاء يجب أن يكون بعد وقت البدء');
   if (id) {
     Object.assign(db.schedule.find((s) => s.id === id), entry);
   } else {
@@ -201,17 +397,17 @@ $('#scheduleForm').addEventListener('submit', (e) => {
 });
 
 function renderSchedule() {
-  fillScheduleGroups();
+  fillScheduleGroups(); suggestTime();
   const list = myScheduleOf().slice().sort((a, b) => a.day - b.day || a.time.localeCompare(b.time));
   $('#scheduleBody').innerHTML = list.length
     ? list.map((s, i) => `<tr>
         <td>${i + 1}</td><td>${DAY_NAMES[s.day]}</td><td>${esc(s.subject)}</td>
-        <td>${esc(s.group) || 'الكل'}</td><td>${s.time}</td><td>${s.lateMin} د</td>
+        <td>${esc(s.group) || 'الكل'}</td><td>${s.time} – ${entryEnd(s)}</td><td>${s.lateMin} د</td><td>${s.auto === false ? '—' : '⚡'}</td>
         <td>
           <button class="btn sm" data-act="edit" data-id="${s.id}">تعديل</button>
           <button class="btn sm danger" data-act="del" data-id="${s.id}">حذف</button>
         </td></tr>`).join('')
-    : '<tr><td colspan="7" class="empty">لا توجد حصص بعد</td></tr>';
+    : '<tr><td colspan="8" class="empty">لا توجد حصص بعد</td></tr>';
 }
 $('#scheduleBody').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
@@ -219,6 +415,7 @@ $('#scheduleBody').addEventListener('click', (e) => {
   if (b.dataset.act === 'edit') {
     $('#scId').value = s.id; $('#scDay').value = s.day; $('#scSubject').value = s.subject;
     $('#scGroup').value = s.group || ''; $('#scTime').value = s.time; $('#scLate').value = s.lateMin;
+    $('#scEnd').value = s.endTime || ''; $('#scAuto').checked = s.auto !== false;
     window.scrollTo(0, 0);
   } else if (b.dataset.act === 'del') {
     if (confirm(`حذف حصة "${s.subject}"؟`)) { db.schedule = db.schedule.filter((x) => x.id !== s.id); persist(); renderSchedule(); }
@@ -232,10 +429,13 @@ function renderTodaySchedule() {
   const box = $('#todaySchedule');
   if (!list.length) { box.hidden = true; return; }
   box.hidden = false;
-  $('#todayScheduleList').innerHTML = list.map((s) => {
+  $('#todayScheduleList').innerHTML = list.map((s, i) => {
     const already = db.sessions.some((ses) => ses.scheduleId === s.id && ses.date === todayStr());
-    return `<div class="schedule-item">
-      <div><b>${esc(s.subject)}</b><span>${s.time} — ${esc(s.group) || 'كل الطلاب'} — تأخير بعد ${s.lateMin} د</span></div>
+    const prev = list[i - 1];
+    const gap = prev ? toMin(s.time) - toMin(entryEnd(prev)) : 0;
+    const brk = gap > 0 ? `<div class="break-chip">☕ استراحة ${gap} د (${entryEnd(prev)} ← ${s.time})</div>` : '';
+    return `${brk}<div class="schedule-item">
+      <div><b>${esc(s.subject)}</b><span>${s.time} – ${entryEnd(s)} — ${esc(s.group) || 'كل الطلاب'} — تأخير بعد ${s.lateMin} د${db.settings.autoSchedule && s.auto !== false ? ' — ⚡ تلقائي' : ''}</span></div>
       <button class="btn sm primary" data-act="quickstart" data-id="${s.id}" ${already ? 'disabled' : ''}>${already ? '✅ بدأت اليوم' : '▶ بدء الحصة'}</button>
     </div>`;
   }).join('');
@@ -247,7 +447,7 @@ $('#todayScheduleList').addEventListener('click', (e) => {
   db.sessions.push({
     id: uid(), subject: s.subject, group: s.group, lateMin: s.lateMin,
     date: todayStr(), time: nowTime(), startTs: d.getTime(), active: true,
-    createdBy: currentUser.id, createdByName: currentUser.name, scheduleId: s.id
+    createdBy: currentUser.id, createdByName: currentUser.name, scheduleId: s.id, autoEnd: s.auto !== false
   });
   persist(); renderScan(); focusScan();
 });
@@ -395,7 +595,7 @@ function renderLog() {
   fillLogSessions();
   const rows = logRows();
   $('#logBody').innerHTML = rows.length
-    ? rows.map((a, i) => `<tr><td>${i + 1}</td><td>${esc(a.studentName)}</td><td>${esc(a.grade)}</td><td>${esc(a.subject || '—')}</td><td>${a.time.slice(0, 5)}</td><td>${statusBadge(a.status)}</td>
+    ? rows.map((a, i) => `<tr><td>${i + 1}</td><td>${esc(a.studentName)}</td><td>${esc(a.grade)}</td><td>${esc(a.subject || '—')}</td><td>${a.time.slice(0, 5)}</td><td>${statusBadge(a.status)}${a.manual ? ' <span class="badge manual">يدوي</span>' : ''}</td>
         <td><button class="btn sm danger" data-id="${a.id}">حذف</button></td></tr>`).join('')
     : '<tr><td colspan="7" class="empty">لا توجد سجلات</td></tr>';
 }
@@ -502,6 +702,9 @@ async function renderSettings() {
   $('#setSchool').value = db.settings.schoolName || '';
   $('#setLate').value = db.settings.lateMinutes ?? 10;
   $('#setBackupDays').value = db.settings.backupKeepDays ?? 30;
+  $('#setAuto').checked = !!db.settings.autoSchedule;
+  $('#setLectureMin').value = db.settings.lectureMinutes ?? 45;
+  $('#setBreakMin').value = db.settings.breakMinutes ?? 10;
   $('#dataPath').textContent = await api.dataPath();
   $('#backupsPath').textContent = await api.backupsDir();
 }
@@ -510,6 +713,12 @@ $('#setSave').addEventListener('click', () => {
   db.settings.lateMinutes = Number($('#setLate').value) || 0;
   db.settings.backupKeepDays = Math.max(1, Number($('#setBackupDays').value) || 30);
   persist(); applyTitle(); toast('تم حفظ الإعدادات');
+});
+$('#setSaveAuto').addEventListener('click', () => {
+  db.settings.autoSchedule = $('#setAuto').checked;
+  db.settings.lectureMinutes = Math.max(5, Number($('#setLectureMin').value) || 45);
+  db.settings.breakMinutes = Math.max(0, Number($('#setBreakMin').value) || 0);
+  persist(); autoTick(); renderScan(); toast(db.settings.autoSchedule ? 'تم تفعيل التشغيل التلقائي' : 'تم إيقاف التشغيل التلقائي');
 });
 $('#bkOpenFolder').addEventListener('click', () => api.openBackupsFolder());
 $('#bkExport').addEventListener('click', async () => { if (await api.exportBackup()) toast('تم تصدير النسخة'); });
@@ -538,6 +747,7 @@ $('#loginForm').addEventListener('submit', async (e) => {
   $('#mainArea').hidden = false;
   applyRoleNav();
   switchTab('scan');
+  autoTick();
 });
 $('#logoutBtn').addEventListener('click', () => {
   currentUser = null;
