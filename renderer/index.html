@@ -9,22 +9,44 @@
 <body>
 <header>
   <h1 id="appTitle">حضور الطلبة</h1>
-  <div id="clock"></div>
+  <div class="header-right">
+    <span id="whoAmI"></span>
+    <button class="btn sm" id="logoutBtn">خروج</button>
+    <div id="clock"></div>
+  </div>
 </header>
 
-<nav>
-  <button class="tab active" data-tab="scan">📇 تسجيل الحضور</button>
-  <button class="tab" data-tab="students">👨‍🎓 الطلاب</button>
-  <button class="tab" data-tab="log">📋 سجل الحضور</button>
-  <button class="tab" data-tab="reports">📊 التقارير والغياب</button>
-  <button class="tab" data-tab="settings">⚙️ الإعدادات</button>
+<!-- شاشة الدخول -->
+<div id="loginScreen" class="login-overlay">
+  <form id="loginForm" class="card login-card">
+    <h2>تسجيل الدخول</h2>
+    <label>اسم المستخدم<input id="loginUser" autocomplete="username" required></label>
+    <label>كلمة المرور<input id="loginPass" type="password" autocomplete="current-password" required></label>
+    <div id="loginError" class="login-error" hidden></div>
+    <button class="btn primary" type="submit">دخول</button>
+    <p class="hint">أول مرة؟ المستخدم: admin — كلمة المرور: 1234 (غيّرها من تبويب المستخدمين)</p>
+  </form>
+</div>
+
+<nav id="mainNav" hidden>
+  <button class="tab active" data-tab="scan" data-roles="admin,teacher">📇 تسجيل الحضور</button>
+  <button class="tab" data-tab="schedule" data-roles="admin,teacher">🗓️ الجدول الأسبوعي</button>
+  <button class="tab" data-tab="students" data-roles="admin">👨‍🎓 الطلاب</button>
+  <button class="tab" data-tab="log" data-roles="admin,teacher">📋 سجل الحضور</button>
+  <button class="tab" data-tab="reports" data-roles="admin,teacher">📊 التقارير والغياب</button>
+  <button class="tab" data-tab="users" data-roles="admin">🔑 المستخدمون</button>
+  <button class="tab" data-tab="settings" data-roles="admin">⚙️ الإعدادات</button>
 </nav>
 
-<main>
+<main id="mainArea" hidden>
   <!-- تسجيل الحضور -->
   <section id="scan" class="panel active">
+    <div id="todaySchedule" class="card" hidden>
+      <h3>حصص اليوم (<span id="todayDayName"></span>)</h3>
+      <div id="todayScheduleList"></div>
+    </div>
     <form id="noSession" class="card">
-      <h3>لا توجد محاضرة جارية — ابدأ محاضرة جديدة</h3>
+      <h3>أو ابدأ محاضرة يدوياً</h3>
       <label>اسم المادة / المحاضرة<input id="sesSubject" required></label>
       <label>المجموعة (الصف / الشعبة)<select id="sesGroup"><option value="">كل الطلاب</option></select></label>
       <label>يُعتبر متأخراً بعد (دقيقة من بداية المحاضرة)<input type="number" id="sesLate" min="0" value="10"></label>
@@ -39,7 +61,10 @@
       <div class="scan-box">
         <p class="hint">يمرّر كل طالب بطاقته على القارئ (يجب أن يكون المؤشر داخل الحقل)</p>
         <input id="scanInput" autocomplete="off" placeholder="بانتظار قراءة البطاقة...">
-        <div id="scanResult" class="result idle">بانتظار البطاقة</div>
+        <div id="scanResult" class="result idle">
+          <img id="scanPhoto" class="scan-photo" hidden alt="">
+          <div id="scanText">بانتظار البطاقة</div>
+        </div>
       </div>
       <div class="stats">
         <div class="stat"><b id="stPresent">0</b><span>حاضر</span></div>
@@ -52,20 +77,64 @@
     </div>
   </section>
 
+  <!-- الجدول الأسبوعي -->
+  <section id="schedule" class="panel">
+    <form id="scheduleForm" class="card">
+      <input type="hidden" id="scId">
+      <label>اليوم
+        <select id="scDay">
+          <option value="0">الأحد</option>
+          <option value="1">الاثنين</option>
+          <option value="2">الثلاثاء</option>
+          <option value="3">الأربعاء</option>
+          <option value="4">الخميس</option>
+          <option value="5">الجمعة</option>
+          <option value="6">السبت</option>
+        </select>
+      </label>
+      <label>اسم المادة / المحاضرة<input id="scSubject" required></label>
+      <label>المجموعة (الصف / الشعبة)<select id="scGroup"><option value="">كل الطلاب</option></select></label>
+      <label>وقت البدء<input type="time" id="scTime" required></label>
+      <label>يُعتبر متأخراً بعد (دقيقة)<input type="number" id="scLate" min="0" value="10"></label>
+      <div class="row">
+        <button class="btn primary" type="submit">حفظ</button>
+        <button class="btn" type="button" id="scCancel">إلغاء / جديد</button>
+      </div>
+    </form>
+    <table><thead><tr><th>#</th><th>اليوم</th><th>المادة</th><th>المجموعة</th><th>الوقت</th><th>السماح</th><th>إجراءات</th></tr></thead>
+    <tbody id="scheduleBody"></tbody></table>
+  </section>
+
   <!-- الطلاب -->
   <section id="students" class="panel">
     <form id="studentForm" class="card">
       <input type="hidden" id="stId">
+      <input type="hidden" id="stPhoto">
+      <div class="photo-row">
+        <img id="stPhotoPreview" class="photo-preview" alt="">
+        <div class="photo-buttons">
+          <button type="button" class="btn sm" id="stPhotoPick">🖼 اختيار صورة</button>
+          <button type="button" class="btn sm danger" id="stPhotoClear">حذف الصورة</button>
+        </div>
+      </div>
       <label>اسم الطالب<input id="stName" required></label>
       <label>الصف / الشعبة<input id="stGrade" required></label>
-      <label>رقم البطاقة (اضغط في الحقل ثم مرّر البطاقة)<input id="stUid" autocomplete="off"></label>
+      <label>رقم البطاقة
+        <div class="uid-row">
+          <input id="stUid" autocomplete="off" placeholder="اضغط زر القراءة ثم مرّر البطاقة" readonly>
+          <button type="button" class="btn" id="stReadBtn">📇 قراءة البطاقة</button>
+        </div>
+      </label>
       <div class="row">
         <button class="btn primary" type="submit">حفظ</button>
         <button class="btn" type="button" id="stCancel">إلغاء / جديد</button>
       </div>
     </form>
-    <input id="stSearch" class="search" placeholder="🔍 بحث بالاسم أو الصف أو رقم البطاقة">
-    <table><thead><tr><th>#</th><th>الاسم</th><th>الصف</th><th>رقم البطاقة</th><th>إجراءات</th></tr></thead>
+    <div class="toolbar">
+      <input id="stSearch" class="search" placeholder="🔍 بحث بالاسم أو الصف أو رقم البطاقة">
+      <button class="btn" id="stImportBtn">📥 استيراد من Excel</button>
+    </div>
+    <table><thead><tr><th>#</th><th></th><th>الاسم</th><th>الصف</th><th>رقم البطاقة</th><th>إجراءات</th></tr></thead>
     <tbody id="studentsBody"></tbody></table>
   </section>
 
@@ -96,6 +165,37 @@
     <h3>قائمة الغائبين</h3>
     <table><thead><tr><th>#</th><th>الاسم</th><th>الصف</th><th></th></tr></thead>
     <tbody id="absentBody"></tbody></table>
+
+    <h3>تقرير شهري لكل طالب</h3>
+    <div class="toolbar">
+      <label>الشهر <input type="month" id="monthInput"></label>
+      <label>المجموعة <select id="monthGroup"><option value="">الكل</option></select></label>
+      <button class="btn" id="monthExport">تصدير CSV</button>
+    </div>
+    <table><thead><tr><th>#</th><th>الاسم</th><th>الصف</th><th>عدد الحصص</th><th>حاضر</th><th>متأخر</th><th>غائب</th><th>نسبة الحضور</th></tr></thead>
+    <tbody id="monthBody"></tbody></table>
+  </section>
+
+  <!-- المستخدمون -->
+  <section id="users" class="panel">
+    <form id="userForm" class="card">
+      <input type="hidden" id="usId">
+      <label>اسم المستخدم (للدخول)<input id="usUsername" required></label>
+      <label>الاسم الظاهر<input id="usName" required></label>
+      <label>الدور
+        <select id="usRole">
+          <option value="teacher">مدرّس (يرى محاضراته فقط)</option>
+          <option value="admin">مدير (يرى كل شيء)</option>
+        </select>
+      </label>
+      <label id="usPassWrap">كلمة المرور<input id="usPass" type="password" autocomplete="new-password"></label>
+      <div class="row">
+        <button class="btn primary" type="submit">حفظ</button>
+        <button class="btn" type="button" id="usCancel">إلغاء / جديد</button>
+      </div>
+    </form>
+    <table><thead><tr><th>#</th><th>اسم المستخدم</th><th>الاسم</th><th>الدور</th><th>إجراءات</th></tr></thead>
+    <tbody id="usersBody"></tbody></table>
   </section>
 
   <!-- الإعدادات -->
@@ -106,10 +206,19 @@
       <button class="btn primary" id="setSave">حفظ الإعدادات</button>
     </div>
     <div class="card">
-      <h3>النسخ الاحتياطي</h3>
+      <h3>النسخ الاحتياطي التلقائي</h3>
+      <p class="hint">يأخذ البرنامج نسخة احتياطية تلقائياً مرة واحدة كل يوم عند فتح البرنامج، ويحذف القديم منها تلقائياً.</p>
+      <label>عدد الأيام المحتفظ بنسخها<input type="number" id="setBackupDays" min="1" value="30"></label>
       <div class="row">
-        <button class="btn" id="bkExport">تصدير نسخة احتياطية</button>
-        <button class="btn" id="bkImport">استيراد نسخة احتياطية</button>
+        <button class="btn" id="bkOpenFolder">📂 فتح مجلد النسخ الاحتياطية</button>
+      </div>
+      <p class="hint">مكان المجلد: <span id="backupsPath" dir="ltr"></span></p>
+    </div>
+    <div class="card">
+      <h3>نسخ احتياطي يدوي</h3>
+      <div class="row">
+        <button class="btn" id="bkExport">تصدير نسخة الآن</button>
+        <button class="btn" id="bkImport">استيراد نسخة</button>
       </div>
       <p class="hint">مكان حفظ البيانات: <span id="dataPath" dir="ltr"></span></p>
     </div>

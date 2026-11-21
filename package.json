@@ -16,8 +16,18 @@
   "build": {
     "appId": "com.attendance.nfc",
     "productName": "حضور الطلبة",
-    "files": ["main.js", "preload.js", "renderer/**/*"],
-    "win": { "target": ["nsis", "portable"] },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5"
   }
 }
