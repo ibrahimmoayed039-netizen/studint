@@ -259,6 +259,8 @@ input[type=checkbox]{width:22px;height:22px;padding:0;flex:none;accent-color:var
 @keyframes kring{0%{transform:scale(.9);opacity:.9}100%{transform:scale(1.6);opacity:0}}
 .k-name{font-size:68px;font-weight:800;line-height:1.15;text-shadow:0 8px 28px rgba(0,0,0,.6);max-width:90vw}
 .k-sub{font-size:30px;color:#e9ecff;opacity:.9;min-height:38px}
+.k-late{font-size:20px;color:var(--mut);margin-top:6px}.k-late.warn{color:#ffd27a}
+.k-recent{font-size:18px;color:var(--mut);margin-top:4px;min-height:24px;max-width:80vw;text-align:center}
 .k-bottom{display:flex;gap:18px;align-items:stretch;justify-content:center;flex-wrap:wrap}
 .k-stat{min-width:160px;padding:14px 26px;text-align:center;border-radius:18px;
   background:linear-gradient(145deg,rgba(255,255,255,.12),rgba(255,255,255,.04));border:1px solid var(--bd);box-shadow:var(--sh-md),var(--hl)}
@@ -294,3 +296,10 @@ input[type=checkbox]{width:22px;height:22px;padding:0;flex:none;accent-color:var
 .p-sub{color:var(--mut);font-size:18px;min-height:26px;margin-bottom:12px}
 .p-card.final .p-name{color:#ffd27a;animation:pop .55s cubic-bezier(.2,1.4,.4,1)}
 .p-card.final .p-photo,.p-card.final .p-icon{box-shadow:0 26px 44px -8px rgba(0,0,0,.7),0 0 80px rgba(245,165,36,.9)}
+.badge.bad{background:linear-gradient(180deg,rgba(240,68,107,.5),rgba(240,68,107,.25));color:#ffd3dd;border-color:rgba(240,68,107,.6)}
+
+.login-notice{background:rgba(25,195,125,.18);color:#c8ffe6;border:1px solid rgba(25,195,125,.5);padding:9px 12px;border-radius:12px;font-size:13px;text-align:center}
+.auth .p-card{text-align:right}
+.auth .p-title{text-align:center}
+.auth label{margin:10px 0}
+.auth input{width:100%}

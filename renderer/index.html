@@ -23,6 +23,7 @@
     <h2>تسجيل الدخول</h2>
     <label>اسم المستخدم<input id="loginUser" autocomplete="username" required></label>
     <label>كلمة المرور<input id="loginPass" type="password" autocomplete="current-password" required></label>
+    <div id="loginNotice" class="login-notice" hidden></div>
     <div id="loginError" class="login-error" hidden></div>
     <button class="btn primary" type="submit">دخول</button>
     <p class="hint">أول مرة؟ المستخدم: admin — كلمة المرور: 1234 (غيّرها من تبويب المستخدمين)</p>
@@ -36,6 +37,8 @@
   <button class="tab" data-tab="log" data-roles="admin,teacher">📋 سجل الحضور</button>
   <button class="tab" data-tab="reports" data-roles="admin,teacher">📊 التقارير والغياب</button>
   <button class="tab" data-tab="users" data-roles="admin">🔑 المستخدمون</button>
+  <button class="tab" data-tab="devices" data-roles="admin">📡 الأجهزة</button>
+  <button class="tab" data-tab="audit" data-roles="admin">🛡️ سجل التدقيق</button>
   <button class="tab" data-tab="settings" data-roles="admin">⚙️ الإعدادات</button>
 </nav>
 
@@ -118,6 +121,74 @@
     <tbody id="scheduleBody"></tbody></table>
   </section>
 
+  <!-- أجهزة الأندرويد على الشبكة -->
+  <section id="devices" class="panel">
+    <div class="card">
+      <h3>📡 هواتف الأندرويد على الشبكة المحلية</h3>
+      <p class="hint">في كل هاتف: الإعدادات ← «التحكم من الحاسوب» ← تفعيل. سيظهر عنوان الهاتف ورمز الاتصال (6 أرقام). يجب أن يكون الحاسوب والهواتف على نفس شبكة Wi-Fi.</p>
+      <div class="row2">
+        <label>اسم الجهاز (مثلاً: الصف الأول)<input id="dvName"></label>
+        <label>عنوان الهاتف (IP)<input id="dvHost" dir="ltr" placeholder="192.168.1.20"></label>
+      </div>
+      <div class="row2">
+        <label>المنفذ<input id="dvPort" type="number" value="8765" dir="ltr"></label>
+        <label>رمز الاتصال<input id="dvToken" dir="ltr" maxlength="6" inputmode="numeric" placeholder="123456"></label>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="dvAdd">➕ إضافة جهاز</button>
+        <button class="btn" id="dvScan">🔍 بحث تلقائي في الشبكة</button>
+      </div>
+      <div id="dvFound"></div>
+    </div>
+    <table><thead><tr><th>#</th><th>الجهاز</th><th>العنوان</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+    <tbody id="dvBody"></tbody></table>
+
+    <div id="dvEditor" class="card" style="max-width:none" hidden>
+      <h3 id="dvTitle"></h3>
+      <div class="row">
+        <label>جدول المستخدم<select id="dvOwner"></select></label>
+        <button class="btn sm" id="dvRefresh">🔄 تحديث</button>
+        <button class="btn sm" id="dvCopy">📋 نسخ هذا الجدول إلى جهاز آخر</button>
+        <button class="btn sm" id="dvClose">إغلاق</button>
+      </div>
+      <div id="dvCopyBox" class="card" style="max-width:none" hidden>
+        <label>الجهاز الهدف<select id="dvTarget"></select></label>
+        <label>مستخدم الهدف (سيُستبدل جدوله بالكامل)<select id="dvTargetOwner"></select></label>
+        <div class="row">
+          <button class="btn danger" id="dvCopyGo">نسخ واستبدال</button>
+          <button class="btn" id="dvCopyCancel">إلغاء</button>
+        </div>
+      </div>
+      <form id="dvForm" class="card" style="max-width:none">
+        <input type="hidden" id="dvId">
+        <div class="row2">
+          <label>اليوم
+            <select id="dvDay">
+              <option value="0">الأحد</option><option value="1">الاثنين</option><option value="2">الثلاثاء</option>
+              <option value="3">الأربعاء</option><option value="4">الخميس</option><option value="5">الجمعة</option><option value="6">السبت</option>
+            </select>
+          </label>
+          <label>اسم المادة<input id="dvSubject" required></label>
+        </div>
+        <div class="row2">
+          <label>المجموعة (الصف / الشعبة)<input id="dvGroup" placeholder="فارغ = كل الطلاب"></label>
+          <label>يُعتبر متأخراً بعد (دقيقة)<input type="number" id="dvLate" min="0" value="10"></label>
+        </div>
+        <div class="row2">
+          <label>وقت البدء<input type="time" id="dvStart" required></label>
+          <label>وقت الانتهاء (اختياري)<input type="time" id="dvEnd"></label>
+        </div>
+        <label class="check"><input type="checkbox" id="dvAuto" checked> بدء وإنهاء الحصة تلقائياً</label>
+        <div class="row">
+          <button class="btn primary" type="submit">💾 حفظ في الهاتف</button>
+          <button class="btn" type="button" id="dvReset">إلغاء / جديد</button>
+        </div>
+      </form>
+      <table><thead><tr><th>#</th><th>اليوم</th><th>المادة</th><th>المجموعة</th><th>الوقت</th><th>السماح</th><th>تلقائي</th><th>إجراءات</th></tr></thead>
+      <tbody id="dvItems"></tbody></table>
+    </div>
+  </section>
+
   <!-- الطلاب -->
   <section id="students" class="panel">
     <form id="studentForm" class="card">
@@ -183,7 +254,9 @@
     <div class="toolbar">
       <label>الشهر <input type="month" id="monthInput"></label>
       <label>المجموعة <select id="monthGroup"><option value="">الكل</option></select></label>
-      <button class="btn" id="monthExport">تصدير CSV</button>
+      <button class="btn primary" id="monthPdf">📄 PDF للطباعة</button>
+      <button class="btn" id="monthXlsx">📊 Excel</button>
+      <button class="btn" id="monthExport">CSV</button>
     </div>
     <table><thead><tr><th>#</th><th>الاسم</th><th>الصف</th><th>عدد الحصص</th><th>حاضر</th><th>متأخر</th><th>غائب</th><th>نسبة الحضور</th></tr></thead>
     <tbody id="monthBody"></tbody></table>
@@ -201,6 +274,13 @@
           <option value="admin">مدير (يرى كل شيء)</option>
         </select>
       </label>
+      <label>بطاقة المدرّس الخاصة (اختياري — لتأكيد الحذف بدل كلمة المرور)
+        <input id="usCard" autocomplete="off" placeholder="اضغط «قراءة البطاقة» ثم مرّرها">
+      </label>
+      <div class="row">
+        <button class="btn" type="button" id="usReadBtn">📇 قراءة البطاقة</button>
+        <button class="btn" type="button" id="usCardClear">إزالة البطاقة</button>
+      </div>
       <label id="usPassWrap">كلمة المرور<input id="usPass" type="password" autocomplete="new-password"></label>
       <div class="row">
         <button class="btn primary" type="submit">حفظ</button>
@@ -211,11 +291,36 @@
     <tbody id="usersBody"></tbody></table>
   </section>
 
+  <!-- سجل التدقيق -->
+  <section id="audit" class="panel">
+    <div class="toolbar">
+      <label>المستخدم <select id="auUser"><option value="">الكل</option></select></label>
+      <label>من تاريخ <input type="date" id="auDate"></label>
+      <input id="auSearch" class="search" placeholder="🔍 بحث في الإجراء أو التفاصيل">
+      <button class="btn" id="auExport">تصدير CSV</button>
+      <button class="btn danger" id="auPurge">🗑 حذف الأقدم من 90 يوماً</button>
+    </div>
+    <p class="hint">يسجّل من أضاف أو عدّل أو حذف ماذا ومتى (الطلاب، الحضور، الجدول، المستخدمين، الإعدادات، النسخ الاحتياطي). يُعرض أحدث 500 سجل.</p>
+    <table><thead><tr><th>#</th><th>الوقت</th><th>المستخدم</th><th>الإجراء</th><th>التفاصيل</th></tr></thead>
+    <tbody id="auditBody"></tbody></table>
+  </section>
+
   <!-- الإعدادات -->
   <section id="settings" class="panel">
     <div class="card">
       <label>اسم المدرسة / العنوان<input id="setSchool"></label>
+      <div class="photo-row">
+        <img id="setLogoPreview" class="photo-preview" alt="">
+        <div class="photo-buttons">
+          <button type="button" class="btn sm" id="setLogoPick">🖼 اختيار شعار المدرسة</button>
+          <button type="button" class="btn sm danger" id="setLogoClear">حذف الشعار</button>
+        </div>
+      </div>
+      <p class="hint">الشعار يظهر في أعلى تقارير PDF المطبوعة.</p>
       <label>مدة السماح الافتراضية قبل اعتبار الطالب متأخراً (دقيقة)<input type="number" min="0" id="setLate"></label>
+      <label class="check"><input type="checkbox" id="setAutoReceive" checked> فتح شاشة استقبال البطاقات (ملء الشاشة) تلقائياً لحظة بدء أي حصة</label>
+      <label class="check"><input type="checkbox" id="setAutoLogout" checked> تسجيل الخروج تلقائياً عند نهاية الحصة</label>
+      <p class="hint">بعد إنهاء الحصة (يدوياً أو تلقائياً) يُسجَّل الخروج فلا يستطيع أحد تغيير شيء؛ يلزم الدخول من جديد قبل الحصة التالية (بما فيها الحصص التلقائية). حذف الطلاب وسجلات الحضور يتطلب دائماً كلمة مرور المدرّس أو بطاقته.</p>
       <button class="btn primary" id="setSave">حفظ الإعدادات</button>
     </div>
     <div class="card">
@@ -259,6 +364,8 @@
     </div>
     <div class="k-name" id="kName">مرّر بطاقتك على القارئ</div>
     <div class="k-sub" id="kSub"></div>
+    <div class="k-late" id="kLateLeft"></div>
+    <div class="k-recent" id="kRecent"></div>
   </div>
   <div class="k-bottom">
     <div class="k-stat ok"><b id="kPresent">0</b><span>حاضر</span></div>
@@ -280,8 +387,22 @@
     </div>
   </div>
 </div>
+<div id="authModal" class="picker auth" hidden>
+  <div class="p-card">
+    <div class="p-title" id="authTitle">🔐 تأكيد المدرّس</div>
+    <p class="hint">مرّر بطاقة المدرّس الخاصة، أو أدخل كلمة مرور المدرّس.</p>
+    <label>💳 بطاقة المدرّس (مرّرها الآن)<input id="authCard" autocomplete="off" placeholder="بانتظار البطاقة..."></label>
+    <label>أو كلمة المرور<input id="authPass" type="password" autocomplete="off"></label>
+    <div id="authError" class="login-error" hidden></div>
+    <div class="row" style="justify-content:center;margin:10px 0 0">
+      <button class="btn danger" id="authOk">تأكيد الحذف</button>
+      <button class="btn" id="authCancel">إلغاء</button>
+    </div>
+  </div>
+</div>
 <div id="toast"></div>
 <script src="app.js"></script>
+<script src="devices.js"></script>
 <script src="fx.js"></script>
 </body>
 </html>

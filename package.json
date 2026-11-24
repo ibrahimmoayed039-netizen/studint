@@ -1,6 +1,6 @@
 {
   "name": "student-attendance-nfc",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "برنامج تسجيل حضور الطلبة بقارئ بطاقات NFC",
   "main": "main.js",
   "author": "Attendance",

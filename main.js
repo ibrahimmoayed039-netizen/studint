@@ -1,4 +1,6 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, safeStorage } = require('electron');
+const http = require('http');
+const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -10,7 +12,8 @@ const DEFAULT_DB = {
   sessions: [],
   users: [],
   schedule: [],
-  settings: { schoolName: 'حضور الطلبة', lateMinutes: 10, backupKeepDays: 30, autoSchedule: false, lectureMinutes: 45, breakMinutes: 10 }
+  audit: [],
+  settings: { schoolName: 'حضور الطلبة', lateMinutes: 10, backupKeepDays: 30, autoSchedule: false, lectureMinutes: 45, breakMinutes: 10, autoLogout: true }
 };
 
 function hashPassword(password, salt) {
@@ -64,6 +67,7 @@ function loadDb() {
   d.sessions = d.sessions || [];
   d.users = d.users || [];
   d.schedule = d.schedule || [];
+  d.audit = d.audit || [];
   d.settings = { ...DEFAULT_DB.settings, ...(d.settings || {}) };
   if (d.users.length === 0) {
     const { salt, hash } = hashPassword('1234');
@@ -72,6 +76,21 @@ function loadDb() {
   }
   return d;
 }
+
+/** نسخة آمنة للواجهة: بدون كلمات المرور المجزّأة (salt/hash). */
+function publicDb(d) {
+  d.users = d.users.map((u) => ({ id: u.id, username: u.username, name: u.name, role: u.role, createdAt: u.createdAt, cardUid: u.cardUid || '' }));
+  return d;
+}
+
+/** يمنع تكرار البطاقة بين الطلاب والمستخدمين. يُرجع 'student' أو 'user' أو null. */
+function cardConflict(d, uid, exceptUserId) {
+  if (!uid) return null;
+  if (d.students.some((s) => (s.cardUid || '') === uid)) return 'student';
+  if (d.users.some((u) => (u.cardUid || '') === uid && u.id !== exceptUserId)) return 'user';
+  return null;
+}
+const normCard = (s) => String(s || '').trim().toUpperCase();
 
 function saveDb(data) {
   const tmp = dbFile() + '.tmp';
@@ -118,28 +137,50 @@ ipcMain.handle('auth:login', (_e, username, password) => {
   return { ok: true, user: { id: u.id, username: u.username, name: u.name, role: u.role } };
 });
 
-ipcMain.handle('users:list', () => {
+/** تأكيد عملية حذف: كلمة مرور المستخدم الحالي (أو أي مدير) أو بطاقة مدرّس. */
+ipcMain.handle('auth:confirm', (_e, { userId, password, uid } = {}) => {
   const d = loadDb();
-  return d.users.map((u) => ({ id: u.id, username: u.username, name: u.name, role: u.role, createdAt: u.createdAt }));
+  if (uid) {
+    const c = normCard(uid);
+    const u = c && d.users.find((x) => (x.cardUid || '') === c);
+    return u ? { ok: true, via: 'card', name: u.name } : { ok: false };
+  }
+  if (!password) return { ok: false };
+  const ok = d.users.some((x) => (x.id === userId || x.role === 'admin') && verifyPassword(String(password), x.salt, x.hash));
+  return { ok, via: 'password' };
 });
 
-ipcMain.handle('users:create', (_e, { username, password, name, role }) => {
+ipcMain.handle('users:list', () => {
+  const d = loadDb();
+  return d.users.map((u) => ({ id: u.id, username: u.username, name: u.name, role: u.role, createdAt: u.createdAt, cardUid: u.cardUid || '' }));
+});
+
+ipcMain.handle('users:create', (_e, { username, password, name, role, cardUid }) => {
   const d = loadDb();
   username = String(username || '').trim();
   if (!username || !password) return { ok: false, error: 'missing' };
   if (d.users.some((u) => u.username.toLowerCase() === username.toLowerCase())) return { ok: false, error: 'exists' };
+  cardUid = normCard(cardUid);
+  const cc = cardConflict(d, cardUid, '');
+  if (cc) return { ok: false, error: 'card_' + cc };
   const { salt, hash } = hashPassword(password);
-  d.users.push({ id: crypto.randomUUID(), username, name: name || username, role: role === 'admin' ? 'admin' : 'teacher', salt, hash, createdAt: Date.now() });
+  d.users.push({ id: crypto.randomUUID(), username, name: name || username, role: role === 'admin' ? 'admin' : 'teacher', salt, hash, createdAt: Date.now(), cardUid });
   saveDb(d);
   return { ok: true };
 });
 
-ipcMain.handle('users:update', (_e, { id, name, role }) => {
+ipcMain.handle('users:update', (_e, { id, name, role, cardUid }) => {
   const d = loadDb();
   const u = d.users.find((x) => x.id === id);
   if (!u) return { ok: false };
   if (name !== undefined) u.name = name;
   if (role !== undefined) u.role = role === 'admin' ? 'admin' : 'teacher';
+  if (cardUid !== undefined) {
+    const c = normCard(cardUid);
+    const cc = cardConflict(d, c, id);
+    if (cc) return { ok: false, error: 'card_' + cc };
+    u.cardUid = c;
+  }
   saveDb(d);
   return { ok: true };
 });
@@ -208,8 +249,131 @@ ipcMain.handle('img:pick', async () => {
   return { dataUrl: `data:image/${mime};base64,${buf.toString('base64')}` };
 });
 
-ipcMain.handle('db:load', () => loadDb());
-ipcMain.handle('db:save', (_e, data) => { saveDb(data); return true; });
+ipcMain.handle('report:savePdf', async (_e, html, name) => {
+  const r = await dialog.showSaveDialog({ defaultPath: name, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+  if (r.canceled || !r.filePath) return false;
+  const win = new BrowserWindow({ show: false, webPreferences: { javascript: false } });
+  try {
+    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    const pdf = await win.webContents.printToPDF({ pageSize: 'A4', printBackground: true, margins: { marginType: 'default' } });
+    fs.writeFileSync(r.filePath, pdf);
+    return true;
+  } catch { return false; } finally { win.destroy(); }
+});
+
+ipcMain.handle('report:saveXlsx', async (_e, name, sheetName, rows, widths, boldRows) => {
+  const r = await dialog.showSaveDialog({ defaultPath: name, filters: [{ name: 'Excel', extensions: ['xlsx'] }] });
+  if (r.canceled || !r.filePath) return false;
+  try {
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = widths.map((w) => ({ wch: w }));
+    ws['!views'] = [{ RTL: true }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, String(sheetName).slice(0, 31).replace(/[\\/?*\[\]:]/g, '-'));
+    wb.Workbook = { Views: [{ RTL: true }] };
+    XLSX.writeFile(wb, r.filePath);
+    return true;
+  } catch { return false; }
+});
+
+
+/* ---------- التحكم بهواتف الأندرويد عبر الشبكة المحلية ---------- */
+const LAN_PORT = 8765;
+const lanFile = () => path.join(app.getPath('userData'), 'lan-devices.json');
+function lanLoad() { try { return JSON.parse(fs.readFileSync(lanFile(), 'utf8')); } catch { return []; } }
+function lanSave(list) { fs.writeFileSync(lanFile(), JSON.stringify(list, null, 2)); }
+function encTok(t) {
+  try { if (safeStorage.isEncryptionAvailable()) return { enc: true, v: safeStorage.encryptString(t).toString('base64') }; } catch {}
+  return { enc: false, v: t };
+}
+function decTok(o) {
+  try { return o && o.enc ? safeStorage.decryptString(Buffer.from(o.v, 'base64')) : (o ? o.v : ''); } catch { return ''; }
+}
+const validHost = (h) => /^[0-9A-Za-z.\-]{1,100}$/.test(String(h || ''));
+
+function lanHttp(host, port, token, method, p, body, timeout = 6000) {
+  return new Promise((resolve) => {
+    const data = body ? Buffer.from(JSON.stringify(body), 'utf8') : null;
+    const headers = { 'X-Token': token || '' };
+    if (data) { headers['Content-Type'] = 'application/json'; headers['Content-Length'] = data.length; }
+    const req = http.request({ host, port, path: p, method, timeout, headers }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        let j = null;
+        try { j = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch {}
+        resolve({ status: res.statusCode, data: j });
+      });
+    });
+    req.on('timeout', () => { req.destroy(); resolve({ status: 0, error: 'انتهت مهلة الاتصال بالجهاز' }); });
+    req.on('error', () => resolve({ status: 0, error: 'تعذّر الاتصال بالجهاز (تأكد من العنوان والشبكة وتفعيل الخيار في الهاتف)' }));
+    if (data) req.write(data);
+    req.end();
+  });
+}
+
+const isPrivateIp = (ip) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip);
+async function lanScan() {
+  const prefixes = new Set();
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const a of list || []) {
+      if (a.family === 'IPv4' && !a.internal && isPrivateIp(a.address)) prefixes.add(a.address.split('.').slice(0, 3).join('.'));
+    }
+  }
+  const found = [];
+  for (const prefix of prefixes) {
+    const hosts = Array.from({ length: 254 }, (_, i) => `${prefix}.${i + 1}`);
+    let idx = 0;
+    const worker = async () => {
+      while (idx < hosts.length) {
+        const h = hosts[idx++];
+        const r = await lanHttp(h, LAN_PORT, '', 'GET', '/api/ping', null, 900);
+        if (r.status === 200 && r.data && r.data.app === 'attendance-android') found.push({ host: h, port: LAN_PORT, school: r.data.school || '' });
+      }
+    };
+    await Promise.all(Array.from({ length: 80 }, worker));
+  }
+  return found;
+}
+
+const lanPublic = (d) => ({ id: d.id, name: d.name, host: d.host, port: d.port });
+ipcMain.handle('lan:list', () => lanLoad().map(lanPublic));
+ipcMain.handle('lan:add', (_e, { name, host, port, token }) => {
+  name = String(name || '').trim(); host = String(host || '').trim(); port = Number(port) || LAN_PORT; token = String(token || '').trim();
+  if (!name) return { ok: false, error: 'اسم الجهاز مطلوب' };
+  if (!validHost(host)) return { ok: false, error: 'عنوان IP غير صالح' };
+  if (!(port > 0 && port < 65536)) return { ok: false, error: 'المنفذ غير صالح' };
+  if (!/^\d{6}$/.test(token)) return { ok: false, error: 'رمز الاتصال 6 أرقام' };
+  const list = lanLoad();
+  if (list.some((d) => d.host === host && d.port === port)) return { ok: false, error: 'هذا الجهاز مضاف مسبقاً' };
+  list.push({ id: crypto.randomBytes(6).toString('hex'), name, host, port, tok: encTok(token) });
+  lanSave(list);
+  return { ok: true };
+});
+ipcMain.handle('lan:setToken', (_e, { id, token }) => {
+  if (!/^\d{6}$/.test(String(token || ''))) return { ok: false, error: 'رمز الاتصال 6 أرقام' };
+  const list = lanLoad(); const d = list.find((x) => x.id === id);
+  if (!d) return { ok: false, error: 'الجهاز غير موجود' };
+  d.tok = encTok(String(token)); lanSave(list); return { ok: true };
+});
+ipcMain.handle('lan:remove', (_e, id) => { lanSave(lanLoad().filter((d) => d.id !== id)); return true; });
+ipcMain.handle('lan:ping', async (_e, id) => {
+  const d = lanLoad().find((x) => x.id === id);
+  if (!d) return { online: false };
+  const r = await lanHttp(d.host, d.port, '', 'GET', '/api/ping', null, 2500);
+  return { online: r.status === 200 && !!r.data && r.data.app === 'attendance-android', school: r.data && r.data.school };
+});
+ipcMain.handle('lan:call', async (_e, { id, method, path: p, body }) => {
+  const d = lanLoad().find((x) => x.id === id);
+  if (!d) return { status: 0, error: 'الجهاز غير موجود' };
+  if (!/^\/api\/schedule(\/(save|delete|replace))?$/.test(String(p))) return { status: 0, error: 'مسار غير مسموح' };
+  return lanHttp(d.host, d.port, decTok(d.tok), method === 'POST' ? 'POST' : 'GET', p, body || null, 8000);
+});
+ipcMain.handle('lan:scan', () => lanScan());
+
+ipcMain.handle('db:load', () => publicDb(loadDb()));
+// المستخدمون (وكلمات مرورهم وبطاقاتهم) تُدار فقط عبر users:* — لا نسمح للواجهة بالكتابة فوقها بنسخة قديمة
+ipcMain.handle('db:save', (_e, data) => { data.users = loadDb().users; saveDb(data); return true; });
 ipcMain.handle('db:path', () => dbFile());
 
 ipcMain.handle('file:save', async (_e, name, content) => {
@@ -244,7 +408,7 @@ ipcMain.handle('backup:import', async () => {
     if (!Array.isArray(d.students) || !Array.isArray(d.attendance)) return null;
     d.sessions = d.sessions || [];
     saveDb(d);
-    return loadDb();
+    return publicDb(loadDb());
   } catch {
     return null;
   }

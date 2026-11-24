@@ -10,7 +10,14 @@ const nowTime = () => { const d = new Date(); return `${pad(d.getHours())}:${pad
 const normUid = (s) => String(s || '').trim().toUpperCase();
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const persist = () => api.save(db);
-const activeSession = () => db.sessions.find((s) => s.active && (isAdmin() || s.createdBy === currentUser.id));
+/* ---------- سجل التدقيق ---------- */
+function audit(action, detail) {
+  db.audit = db.audit || [];
+  db.audit.push({ id: uid(), ts: Date.now(), userId: currentUser ? currentUser.id : '', userName: currentUser ? currentUser.name : 'النظام', action, detail: detail || '' });
+  if (db.audit.length > 5000) db.audit.splice(0, db.audit.length - 5000);
+  persist();
+}
+const activeSession = () => currentUser ? db.sessions.find((s) => s.active && (isAdmin() || s.createdBy === currentUser.id)) : undefined;
 const visibleSessions = (list) => isAdmin() ? list : list.filter((s) => s.createdBy === currentUser.id);
 const sessionLabel = (s) => `${s.subject} — ${s.time.slice(0, 5)}${s.group ? ' (' + s.group + ')' : ''}`;
 
@@ -37,7 +44,7 @@ const statusBadge = (s) => s === 'late'
 /* ---------- التبويبات ---------- */
 document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 function switchTab(name) {
-  const allowed = isAdmin() ? ['scan', 'schedule', 'students', 'log', 'reports', 'users', 'settings'] : ['scan', 'schedule', 'log', 'reports'];
+  const allowed = isAdmin() ? ['scan', 'schedule', 'students', 'log', 'reports', 'users', 'devices', 'audit', 'settings'] : ['scan', 'schedule', 'log', 'reports'];
   if (!allowed.includes(name)) name = 'scan';
   document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === name));
   document.querySelectorAll('.panel').forEach((x) => x.classList.toggle('active', x.id === name));
@@ -47,6 +54,8 @@ function switchTab(name) {
   if (name === 'log') renderLog();
   if (name === 'reports') renderReports();
   if (name === 'users') renderUsers();
+  if (name === 'devices' && typeof renderDevices === 'function') renderDevices();
+  if (name === 'audit') renderAudit();
   if (name === 'settings') renderSettings();
 }
 function applyRoleNav() {
@@ -83,6 +92,7 @@ function record(ses, student, status, manual) {
     date: ses.date, time: nowTime(), status, manual: !!manual
   };
   db.attendance.push(rec);
+  if (manual) audit('حضور يدوي', `${student.name} — ${ses.subject} ${ses.date}`);
   persist();
   return rec;
 }
@@ -103,7 +113,8 @@ $('#noSession').addEventListener('submit', (e) => {
     startTs: d.getTime(), active: true,
     createdBy: currentUser.id, createdByName: currentUser.name
   });
-  persist(); $('#sesSubject').value = ''; renderScan(); focusScan();
+  audit('بدء محاضرة', $('#sesSubject').value.trim() + ($('#sesGroup').value ? ` (${$('#sesGroup').value})` : ''));
+  persist(); $('#sesSubject').value = ''; renderScan(); focusScan(); autoOpenReceive();
 });
 
 $('#sesEnd').addEventListener('click', () => {
@@ -111,7 +122,10 @@ $('#sesEnd').addEventListener('click', () => {
   const { absent } = sessionStats(ses);
   if (!confirm(`إنهاء المحاضرة؟ عدد من لم يحضر: ${absent.length}`)) return;
   ses.active = false; ses.endTime = nowTime();
+  audit('إنهاء محاضرة', ses.subject);
   persist(); renderScan();
+  // نهاية الحصة: تسجيل خروج حتى لا يتمكن أحد من العبث بالبيانات
+  if (db.settings.autoLogout !== false) doLogout(true);
 });
 
 
@@ -126,6 +140,7 @@ function updateKiosk() {
   $('#kMeta').textContent = `${ses.group || 'كل الطلاب'} — بدأت ${ses.time.slice(0, 5)}`;
   const st = sessionStats(ses);
   $('#kPresent').textContent = st.present; $('#kLate').textContent = st.late; $('#kAbsent').textContent = st.absent.length;
+  updateKioskLive();
 }
 function kioskIdle() {
   const k = $('#kiosk'); k.dataset.state = 'idle';
@@ -156,11 +171,25 @@ function exitKiosk() {
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   focusScan();
 }
+/** لحظة بدء أي حصة (يدوي أو تلقائي من الجدول) تُفتح شاشة استقبال البطاقات تلقائياً. */
+function autoOpenReceive() {
+  if (db.settings.autoReceive === false || !activeSession() || kioskOn()) return;
+  enterKiosk();
+}
+/** المهلة المتبقية قبل احتساب التأخير + آخر الطلاب المسجّلين (تُحدَّث كل ثانية). */
+function updateKioskLive() {
+  const ses = activeSession(); if (!ses || !kioskOn()) return;
+  const left = (ses.lateMin || 0) - Math.floor((Date.now() - ses.startTs) / 60000);
+  $('#kLateLeft').textContent = left > 0 ? `⏳ باقي ${left} د قبل احتساب التأخير` : '⏰ انتهت مهلة الحضور — التسجيل الآن «متأخر»';
+  $('#kLateLeft').classList.toggle('warn', left <= 0);
+  const recent = sessionStats(ses).recs.slice(-4).reverse().map((a) => a.studentName).join(' • ');
+  $('#kRecent').textContent = recent ? `آخر المسجّلين: ${recent}` : '';
+}
 $('#kioskBtn').addEventListener('click', enterKiosk);
 $('#kExit').addEventListener('click', exitKiosk);
-document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if (!$('#picker').hidden) { closePicker(); return; } exitKiosk(); });
+document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if (!$('#authModal').hidden) { closeAuth(false); return; } if (!$('#picker').hidden) { closePicker(); return; } exitKiosk(); });
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) exitKiosk(); });
-setInterval(() => { if (kioskOn()) $('#kClock').textContent = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }); }, 1000);
+setInterval(() => { if (kioskOn()) { $('#kClock').textContent = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }); updateKioskLive(); } }, 1000);
 
 
 /* ---------- حضور يدوي لمن نسي بطاقته ---------- */
@@ -237,7 +266,7 @@ $('#kPick').addEventListener('click', runPicker);
 $('#pAgain').addEventListener('click', runPicker);
 $('#pClose').addEventListener('click', closePicker);
 
-function focusScan() { setTimeout(() => { if (activeSession() && !$('#manSearch').matches(':focus') && $('#picker').hidden) $('#scanInput').focus(); }, 50); }
+function focusScan() { setTimeout(() => { if (activeSession() && !$('#manSearch').matches(':focus') && $('#picker').hidden && $('#authModal').hidden) $('#scanInput').focus(); }, 50); }
 $('#scanInput').addEventListener('blur', () => {
   if ($('#scan').classList.contains('active')) focusScan();
 });
@@ -308,7 +337,7 @@ const lectureLen = () => Number(db.settings.lectureMinutes) || 45;
 const breakLen = () => Number(db.settings.breakMinutes) >= 0 ? Number(db.settings.breakMinutes) : 10;
 const entryEnd = (s) => s.endTime || fromMin(toMin(s.time) + lectureLen());
 const todayList = () => myScheduleOf().filter((s) => s.day === new Date().getDay()).sort((a, b) => a.time.localeCompare(b.time));
-const myActive = () => db.sessions.find((s) => s.active && s.createdBy === currentUser.id);
+const myActive = () => currentUser ? db.sessions.find((s) => s.active && s.createdBy === currentUser.id) : undefined;
 
 function suggestTime() {
   if ($('#scId').value || $('#scTime').value) return;
@@ -342,16 +371,18 @@ function renderBreak() {
 function autoTick() {
   if (!currentUser || !db.settings.autoSchedule) { renderBreak(); return; }
   const now = new Date(); const nm = now.getHours() * 60 + now.getMinutes();
-  let changed = false;
+  let changed = false, started = false, ended = false;
   // إنهاء تلقائي
   db.sessions.forEach((ses) => {
     if (!(ses.active && ses.createdBy === currentUser.id && ses.autoEnd && ses.scheduleId)) return;
     const e = db.schedule.find((x) => x.id === ses.scheduleId); if (!e) return;
     if (ses.date !== todayStr() || nm >= toMin(entryEnd(e))) {
-      ses.active = false; ses.endTime = entryEnd(e) + ':00'; changed = true;
+      ses.active = false; ses.endTime = entryEnd(e) + ':00'; changed = true; ended = true;
+      audit('إنهاء محاضرة تلقائياً', ses.subject);
       toast(`انتهت محاضرة «${ses.subject}» تلقائياً`);
     }
   });
+  if (ended && db.settings.autoLogout !== false) { persist(); doLogout(true); return; }
   // بدء تلقائي
   if (!myActive()) {
     const cand = todayList().find((s) => s.auto !== false && nm >= toMin(s.time) && nm < toMin(entryEnd(s))
@@ -363,10 +394,10 @@ function autoTick() {
         date: todayStr(), time: cand.time + ':00', startTs, active: true, autoEnd: true,
         createdBy: currentUser.id, createdByName: currentUser.name, scheduleId: cand.id
       });
-      changed = true; toast(`بدأت محاضرة «${cand.subject}» تلقائياً`);
+      changed = true; started = true; toast(`بدأت محاضرة «${cand.subject}» تلقائياً`);
     }
   }
-  if (changed) { persist(); renderScan(); if ($('#scan').classList.contains('active')) focusScan(); }
+  if (changed) { persist(); renderScan(); if ($('#scan').classList.contains('active')) focusScan(); if (started) autoOpenReceive(); }
   else renderBreak();
 }
 setInterval(autoTick, 15000);
@@ -388,10 +419,16 @@ $('#scheduleForm').addEventListener('submit', (e) => {
     endTime: $('#scEnd').value || '', auto: $('#scAuto').checked
   };
   if (entry.endTime && toMin(entry.endTime) <= toMin(entry.time)) return toast('وقت الانتهاء يجب أن يكون بعد وقت البدء');
+  const dayN = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+  const what = (e) => `${dayN[Number(e.day)] || ''} ${e.time} — ${e.subject}`;
   if (id) {
-    Object.assign(db.schedule.find((s) => s.id === id), entry);
+    const cur = db.schedule.find((s) => s.id === id);
+    const before = what(cur);
+    Object.assign(cur, entry);
+    audit('تعديل حصة', before === what(cur) ? before : `${before} ← ${what(cur)}`);
   } else {
     db.schedule.push({ id: uid(), ownerId: currentUser.id, ownerName: currentUser.name, ...entry });
+    audit('إضافة حصة', what(entry));
   }
   persist(); resetScheduleForm(); renderSchedule(); toast('تم الحفظ');
 });
@@ -418,7 +455,7 @@ $('#scheduleBody').addEventListener('click', (e) => {
     $('#scEnd').value = s.endTime || ''; $('#scAuto').checked = s.auto !== false;
     window.scrollTo(0, 0);
   } else if (b.dataset.act === 'del') {
-    if (confirm(`حذف حصة "${s.subject}"؟`)) { db.schedule = db.schedule.filter((x) => x.id !== s.id); persist(); renderSchedule(); }
+    if (confirm(`حذف حصة "${s.subject}"؟`)) { db.schedule = db.schedule.filter((x) => x.id !== s.id); audit('حذف حصة', `${s.subject} — ${s.time}`); persist(); renderSchedule(); }
   }
 });
 
@@ -449,7 +486,8 @@ $('#todayScheduleList').addEventListener('click', (e) => {
     date: todayStr(), time: nowTime(), startTs: d.getTime(), active: true,
     createdBy: currentUser.id, createdByName: currentUser.name, scheduleId: s.id, autoEnd: s.auto !== false
   });
-  persist(); renderScan(); focusScan();
+  audit('بدء محاضرة', s.subject + ' — من الجدول');
+  persist(); renderScan(); focusScan(); autoOpenReceive();
 });
 
 /* ---------- الطلاب ---------- */
@@ -507,17 +545,19 @@ $('#stImportBtn').addEventListener('click', async () => {
   if (!r.ok) return toast('تعذّر قراءة الملف: ' + (r.error || ''));
   if (!r.rows.length) return toast('لم يُعثر على أي صف باسم طالب في الملف');
   let added = 0, uidConflicts = 0;
+  const teacherCards = new Set((await api.usersList()).map((u) => u.cardUid).filter(Boolean));
   r.rows.forEach((row) => {
     let cardUid = normUid(row.cardUid);
-    if (cardUid && db.students.some((s) => s.cardUid === cardUid)) { cardUid = ''; uidConflicts++; }
+    if (cardUid && (teacherCards.has(cardUid) || db.students.some((s) => s.cardUid === cardUid))) { cardUid = ''; uidConflicts++; }
     db.students.push({ id: uid(), name: row.name, grade: row.grade || '', cardUid, photo: '', createdAt: Date.now() });
     added++;
   });
+  audit('استيراد طلاب', `${added} طالب من ملف`);
   persist(); renderStudents();
   toast(`تمت إضافة ${added} طالب${uidConflicts ? ` (تم تجاهل رقم البطاقة لـ ${uidConflicts} بسبب التكرار)` : ''}`);
 });
 
-$('#studentForm').addEventListener('submit', (e) => {
+$('#studentForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const id = $('#stId').value;
   const name = $('#stName').value.trim();
@@ -525,12 +565,20 @@ $('#studentForm').addEventListener('submit', (e) => {
   const cardUid = normUid($('#stUid').value);
   const photo = $('#stPhoto').value || '';
   if (cardUid && db.students.some((s) => s.cardUid === cardUid && s.id !== id)) return toast('رقم البطاقة مستخدم لطالب آخر');
+  if (cardUid && (await api.usersList()).some((u) => u.cardUid === cardUid)) return toast('هذه البطاقة مخصّصة لمدرّس');
   if (id) {
     const s = db.students.find((x) => x.id === id);
+    const ch = [];
+    if (s.name !== name) ch.push(`الاسم: ${s.name} ← ${name}`);
+    if (s.grade !== grade) ch.push(`الصف: ${s.grade} ← ${grade}`);
+    if ((s.cardUid || '') !== cardUid) ch.push(`البطاقة: ${s.cardUid || '—'} ← ${cardUid || '—'}`);
+    if ((s.photo || '') !== photo) ch.push('الصورة');
+    if (ch.length) audit('تعديل طالب', `${s.name}: ${ch.join(' • ')}`);
     Object.assign(s, { name, grade, cardUid, photo });
     db.attendance.forEach((a) => { if (a.studentId === id) { a.studentName = name; a.grade = grade; } });
   } else {
     db.students.push({ id: uid(), name, grade, cardUid, photo, createdAt: Date.now() });
+    audit('إضافة طالب', `${name} — ${grade || 'بدون صف'}${cardUid ? ' — بطاقة ' + cardUid : ''}`);
   }
   persist(); resetStudentForm(); renderStudents(); toast('تم الحفظ');
 });
@@ -561,9 +609,10 @@ $('#studentsBody').addEventListener('click', (e) => {
     setPhotoPreview(s.photo || '');
     window.scrollTo(0, 0);
   } else if (b.dataset.act === 'del') {
-    if (confirm(`حذف الطالب "${s.name}"؟ (يبقى سجل حضوره السابق)`)) {
-      db.students = db.students.filter((x) => x.id !== s.id); persist(); renderStudents();
-    }
+    askAuth(`حذف الطالب «${s.name}» — يتطلب تأكيد المدرّس`).then((ok) => {
+      if (!ok) return;
+      db.students = db.students.filter((x) => x.id !== s.id); audit('حذف طالب', `${s.name} — ${s.grade}`); persist(); renderStudents();
+    });
   } else if (b.dataset.act === 'manual') {
     const ses = activeSession();
     if (!ses) return toast('ابدأ محاضرة أولاً');
@@ -601,7 +650,14 @@ function renderLog() {
 }
 $('#logBody').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
-  if (confirm('حذف هذا السجل؟')) { db.attendance = db.attendance.filter((a) => a.id !== b.dataset.id); persist(); renderLog(); }
+  const rec = db.attendance.find((a) => a.id === b.dataset.id);
+  if (!rec) return;
+  askAuth(`حذف سجل «${rec.studentName}» — يتطلب تأكيد المدرّس`).then((ok) => {
+    if (!ok) return;
+    db.attendance = db.attendance.filter((a) => a.id !== b.dataset.id);
+    audit('حذف سجل حضور', `${rec.studentName} — ${rec.subject || ''} ${rec.date} ${rec.time}`);
+    persist(); renderLog();
+  });
 });
 $('#logExport').addEventListener('click', () => {
   const d = $('#logDate').value || todayStr();
@@ -697,12 +753,112 @@ $('#monthExport').addEventListener('click', () => {
   ]);
 });
 
+/* ---------- عرض سجل التدقيق ---------- */
+const fmtTs = (ts) => { const d = new Date(ts); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const auditColor = (a) => /حذف/.test(a) ? 'bad' : /إنشاء|إضافة|استيراد/.test(a) ? 'present' : /كلمة|استرجاع/.test(a) ? 'late' : 'manual';
+function auditRows() {
+  const user = $('#auUser').value, from = $('#auDate').value, q = $('#auSearch').value.trim().toLowerCase();
+  const fromTs = from ? new Date(from + 'T00:00:00').getTime() : 0;
+  return (db.audit || []).filter((e) =>
+    (!user || e.userName === user) && e.ts >= fromTs &&
+    (!q || [e.action, e.detail, e.userName].some((v) => String(v || '').toLowerCase().includes(q)))
+  ).slice().reverse();
+}
+function renderAudit() {
+  const sel = $('#auUser'); const cur = sel.value;
+  const users = [...new Set((db.audit || []).map((e) => e.userName))].sort();
+  sel.innerHTML = '<option value="">الكل</option>' + users.map((u) => `<option ${u === cur ? 'selected' : ''}>${esc(u)}</option>`).join('');
+  const rows = auditRows();
+  $('#auditBody').innerHTML = rows.length
+    ? rows.slice(0, 500).map((e, i) => `<tr><td>${i + 1}</td><td class="ltr">${fmtTs(e.ts)}</td><td>${esc(e.userName)}</td>
+        <td><span class="badge ${auditColor(e.action)}">${esc(e.action)}</span></td><td>${esc(e.detail)}</td></tr>`).join('')
+    : '<tr><td colspan="5" class="empty">لا توجد سجلات</td></tr>';
+}
+$('#auUser').addEventListener('change', renderAudit);
+$('#auDate').addEventListener('change', renderAudit);
+$('#auSearch').addEventListener('input', renderAudit);
+$('#auExport').addEventListener('click', () => {
+  csvDownload('audit-log.csv', [['الوقت', 'المستخدم', 'الإجراء', 'التفاصيل'], ...auditRows().map((e) => [fmtTs(e.ts), e.userName, e.action, e.detail])]);
+});
+$('#auPurge').addEventListener('click', () => {
+  if (!confirm('حذف سجلات التدقيق الأقدم من 90 يوماً؟')) return;
+  const cutoff = Date.now() - 90 * 86400000;
+  const before = db.audit.length;
+  db.audit = db.audit.filter((e) => e.ts >= cutoff);
+  audit('حذف سجلات التدقيق القديمة', `${before - db.audit.length} سجل (أقدم من 90 يوماً)`);
+  renderAudit(); toast('تم الحذف');
+});
+
+/* ---------- تقارير PDF / Excel ---------- */
+function monthlyReportMeta() {
+  const month = $('#monthInput').value || currentMonth();
+  const group = $('#monthGroup').value;
+  const rows = monthlyStats();
+  return { month, group, rows };
+}
+$('#monthXlsx').addEventListener('click', async () => {
+  const { month, group, rows } = monthlyReportMeta();
+  if (!rows.length) return toast('لا توجد بيانات');
+  const data = [
+    [db.settings.schoolName || 'حضور الطلبة'],
+    ['التقرير الشهري للحضور — ' + month + (group ? ' — ' + group : '')],
+    [],
+    ['#', 'اسم الطالب', 'الصف', 'عدد الحصص', 'حاضر', 'متأخر', 'غائب', 'نسبة الحضور'],
+    ...rows.map((r, i) => [i + 1, r.name, r.grade, r.total, r.present, r.late, r.absent, r.total ? r.pct + '%' : '-'])
+  ];
+  if (await api.saveXlsx(`monthly-report-${month}.xlsx`, 'التقرير الشهري', data, [6, 30, 18, 12, 10, 10, 10, 14], [0, 1, 3])) toast('تم حفظ ملف Excel');
+});
+$('#monthPdf').addEventListener('click', async () => {
+  const { month, group, rows } = monthlyReportMeta();
+  if (!rows.length) return toast('لا توجد بيانات');
+  const withData = rows.filter((r) => r.total);
+  const avg = withData.length ? Math.round(withData.reduce((a, r) => a + r.pct, 0) / withData.length) : 0;
+  const low = withData.filter((r) => r.pct < 75).length;
+  const colr = (r) => !r.total ? '#888' : r.pct >= 90 ? '#0e8f5a' : r.pct >= 75 ? '#c77f0a' : '#d32f57';
+  const logo = db.settings.logo ? `<img class="logo" src="${db.settings.logo}">` : '';
+  const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><style>
+    @page { size: A4; margin: 14mm; }
+    body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; color: #111; font-size: 12px; }
+    .head { display: flex; align-items: center; gap: 16px; border-bottom: 3px solid #6d7cff; padding-bottom: 10px; }
+    .logo { height: 72px; max-width: 120px; object-fit: contain; }
+    h1 { margin: 0; font-size: 24px; color: #2a3170; } h2 { margin: 2px 0; font-size: 15px; font-weight: 500; color: #444; }
+    .sub { color: #666; } .sum { margin: 12px 0; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; } thead { display: table-header-group; }
+    th { background: #3d4a9e; color: #fff; padding: 7px 6px; font-size: 12px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    td { padding: 5px 6px; border-bottom: 1px solid #d5d9ee; } tr:nth-child(even) td { background: #f1f3fb; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    td.c, th.c { text-align: center; } td.n { text-align: right; } tr { page-break-inside: avoid; }
+    .foot { margin-top: 14px; color: #888; font-size: 10px; text-align: center; }
+  </style></head><body>
+    <div class="head">${logo}<div><h1>${esc(db.settings.schoolName || 'حضور الطلبة')}</h1><h2>التقرير الشهري للحضور</h2>
+    <div class="sub">الشهر: ${esc(month)} &nbsp;•&nbsp; ${group ? 'المجموعة: ' + esc(group) : 'كل الطلاب'}</div></div></div>
+    <div class="sum">عدد الطلاب: ${rows.length} &nbsp;•&nbsp; متوسط الحضور: ${avg}% &nbsp;•&nbsp; دون 75%: ${low} طالب</div>
+    <table><thead><tr><th class="c">#</th><th>اسم الطالب</th><th>الصف</th><th class="c">الحصص</th><th class="c">حاضر</th><th class="c">متأخر</th><th class="c">غائب</th><th class="c">النسبة</th></tr></thead><tbody>
+    ${rows.map((r, i) => `<tr><td class="c">${i + 1}</td><td class="n">${esc(r.name)}</td><td class="n">${esc(r.grade) || '—'}</td><td class="c">${r.total}</td><td class="c">${r.present}</td><td class="c">${r.late}</td><td class="c">${r.absent}</td><td class="c" style="font-weight:700;color:${colr(r)}">${r.total ? r.pct + '%' : '—'}</td></tr>`).join('')}
+    </tbody></table>
+    <div class="foot">طُبع بتاريخ ${todayStr()}</div></body></html>`;
+  if (await api.savePdf(html, `monthly-report-${month}.pdf`)) toast('تم حفظ ملف PDF');
+});
+
 /* ---------- الإعدادات ---------- */
+function setLogoPreview(dataUrl) {
+  const img = $('#setLogoPreview');
+  if (dataUrl) img.src = dataUrl; else img.removeAttribute('src');
+}
+$('#setLogoPick').addEventListener('click', async () => {
+  const r = await api.pickImage();
+  if (!r) return;
+  if (r.error === 'large') return toast('الصورة كبيرة جداً، اختر صورة أصغر من 2 ميغابايت');
+  db.settings.logo = r.dataUrl; audit('تغيير شعار المدرسة'); persist(); setLogoPreview(r.dataUrl); toast('تم حفظ الشعار');
+});
+$('#setLogoClear').addEventListener('click', () => { db.settings.logo = ''; audit('حذف شعار المدرسة'); persist(); setLogoPreview(''); });
 async function renderSettings() {
+  setLogoPreview(db.settings.logo || '');
   $('#setSchool').value = db.settings.schoolName || '';
   $('#setLate').value = db.settings.lateMinutes ?? 10;
   $('#setBackupDays').value = db.settings.backupKeepDays ?? 30;
   $('#setAuto').checked = !!db.settings.autoSchedule;
+  $('#setAutoReceive').checked = db.settings.autoReceive !== false;
+  $('#setAutoLogout').checked = db.settings.autoLogout !== false;
   $('#setLectureMin').value = db.settings.lectureMinutes ?? 45;
   $('#setBreakMin').value = db.settings.breakMinutes ?? 10;
   $('#dataPath').textContent = await api.dataPath();
@@ -712,20 +868,24 @@ $('#setSave').addEventListener('click', () => {
   db.settings.schoolName = $('#setSchool').value.trim() || 'حضور الطلبة';
   db.settings.lateMinutes = Number($('#setLate').value) || 0;
   db.settings.backupKeepDays = Math.max(1, Number($('#setBackupDays').value) || 30);
+  db.settings.autoReceive = $('#setAutoReceive').checked;
+  db.settings.autoLogout = $('#setAutoLogout').checked;
+  audit('تعديل الإعدادات', `الاسم: ${db.settings.schoolName} • التأخير: ${db.settings.lateMinutes} • أيام النسخ: ${db.settings.backupKeepDays} • شاشة الاستقبال التلقائية: ${db.settings.autoReceive ? 'مفعّلة' : 'معطّلة'} • الخروج التلقائي: ${db.settings.autoLogout ? 'مفعّل' : 'معطّل'}`);
   persist(); applyTitle(); toast('تم حفظ الإعدادات');
 });
 $('#setSaveAuto').addEventListener('click', () => {
   db.settings.autoSchedule = $('#setAuto').checked;
   db.settings.lectureMinutes = Math.max(5, Number($('#setLectureMin').value) || 45);
   db.settings.breakMinutes = Math.max(0, Number($('#setBreakMin').value) || 0);
+  audit('تعديل التشغيل التلقائي', `${db.settings.autoSchedule ? 'مفعّل' : 'معطّل'} • الحصة ${db.settings.lectureMinutes} د • الاستراحة ${db.settings.breakMinutes} د`);
   persist(); autoTick(); renderScan(); toast(db.settings.autoSchedule ? 'تم تفعيل التشغيل التلقائي' : 'تم إيقاف التشغيل التلقائي');
 });
 $('#bkOpenFolder').addEventListener('click', () => api.openBackupsFolder());
-$('#bkExport').addEventListener('click', async () => { if (await api.exportBackup()) toast('تم تصدير النسخة'); });
+$('#bkExport').addEventListener('click', async () => { if (await api.exportBackup()) { audit('تصدير نسخة احتياطية'); toast('تم تصدير النسخة'); } });
 $('#bkImport').addEventListener('click', async () => {
   if (!confirm('سيتم استبدال كل البيانات الحالية بالنسخة المستوردة. متابعة؟')) return;
   const d = await api.importBackup();
-  if (d) { db = d; applyTitle(); renderScan(); toast('تم الاستيراد'); } else toast('تعذّر الاستيراد');
+  if (d) { db = d; audit('استيراد نسخة احتياطية', 'استبدال كل البيانات'); applyTitle(); renderScan(); toast('تم الاستيراد'); } else toast('تعذّر الاستيراد');
 });
 
 function applyTitle() { $('#appTitle').textContent = db.settings.schoolName || 'حضور الطلبة'; }
@@ -742,6 +902,8 @@ $('#loginForm').addEventListener('submit', async (e) => {
     return;
   }
   currentUser = r.user;
+  $('#loginNotice').hidden = true;
+  audit('تسجيل دخول');
   $('#loginScreen').hidden = true;
   $('#mainNav').hidden = false;
   $('#mainArea').hidden = false;
@@ -749,13 +911,61 @@ $('#loginForm').addEventListener('submit', async (e) => {
   switchTab('scan');
   autoTick();
 });
-$('#logoutBtn').addEventListener('click', () => {
+function doLogout(auto) {
+  audit(auto ? 'تسجيل خروج تلقائي (انتهاء الحصة)' : 'تسجيل خروج');
+  closeAuth(false);
+  exitKiosk();           // قبل تصفير المستخدم لأنها تعتمد عليه
   currentUser = null;
   $('#loginUser').value = ''; $('#loginPass').value = ''; $('#loginError').hidden = true;
+  const n = $('#loginNotice');
+  if (auto) { n.textContent = '🔒 انتهت الحصة وتم تسجيل الخروج تلقائياً'; n.hidden = false; } else n.hidden = true;
   $('#loginScreen').hidden = false;
   $('#mainNav').hidden = true;
   $('#mainArea').hidden = true;
+  $('#loginUser').focus();
+}
+$('#logoutBtn').addEventListener('click', () => doLogout(false));
+
+/* ---------- تأكيد المدرّس (كلمة مرور أو بطاقة) قبل الحذف ---------- */
+let authResolve = null;
+function askAuth(title) {
+  return new Promise((resolve) => {
+    if (authResolve) authResolve(false);
+    authResolve = resolve;
+    $('#authTitle').textContent = '🔐 ' + title;
+    $('#authCard').value = ''; $('#authPass').value = ''; $('#authError').hidden = true;
+    $('#authModal').hidden = false;
+    setTimeout(() => $('#authCard').focus(), 50);
+  });
+}
+function closeAuth(ok) {
+  $('#authModal').hidden = true;
+  const r = authResolve; authResolve = null;
+  if (r) r(ok);
+  if (currentUser) focusScan();
+}
+function authFail(msg, why) {
+  const e = $('#authError'); e.textContent = msg; e.hidden = false;
+  beep(220, 300); audit('محاولة فاشلة لتأكيد حذف', why);
+}
+$('#authCard').addEventListener('keydown', async (e) => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const v = normUid(e.target.value); e.target.value = '';
+  if (!v) return;
+  const r = await api.authConfirm({ uid: v });
+  if (r.ok) { audit('تأكيد عملية حذف ببطاقة المدرّس', r.name); closeAuth(true); }
+  else { authFail('هذه ليست بطاقة مدرّس', 'بطاقة غير مصرّح بها'); $('#authCard').focus(); }
 });
+async function authSubmitPass() {
+  const p = $('#authPass').value; if (!p) return;
+  const r = await api.authConfirm({ userId: currentUser && currentUser.id, password: p });
+  if (r.ok) { audit('تأكيد عملية حذف بكلمة المرور'); closeAuth(true); }
+  else { authFail('كلمة المرور غير صحيحة', 'كلمة مرور خاطئة'); $('#authPass').value = ''; $('#authPass').focus(); }
+}
+$('#authPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); authSubmitPass(); } });
+$('#authOk').addEventListener('click', authSubmitPass);
+$('#authCancel').addEventListener('click', () => closeAuth(false));
 
 /* ---------- المستخدمون ---------- */
 function resetUserForm() {
@@ -763,7 +973,12 @@ function resetUserForm() {
   $('#usUsername').disabled = false;
   $('#usPass').required = true;
   $('#usPassWrap').querySelector('input').placeholder = '';
+  $('#usCard').placeholder = 'اضغط «قراءة البطاقة» ثم مرّرها';
 }
+$('#usReadBtn').addEventListener('click', () => { const i = $('#usCard'); i.value = ''; i.placeholder = 'مرّر البطاقة الآن...'; i.focus(); });
+$('#usCardClear').addEventListener('click', () => { $('#usCard').value = ''; });
+$('#usCard').addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
+$('#usCard').addEventListener('keydown', (e) => { if (e.key !== 'Enter') return; e.preventDefault(); if (e.target.value) toast('تم قراءة رقم البطاقة'); });
 $('#usCancel').addEventListener('click', resetUserForm);
 
 $('#userForm').addEventListener('submit', async (e) => {
@@ -773,18 +988,24 @@ $('#userForm').addEventListener('submit', async (e) => {
   const name = $('#usName').value.trim();
   const role = $('#usRole').value;
   const pass = $('#usPass').value;
+  const cardUid = normUid($('#usCard').value);
+  const cardErr = (r) => r.error === 'card_student' ? 'هذه البطاقة مسجّلة لطالب' : r.error === 'card_user' ? 'هذه البطاقة مسجّلة لمستخدم آخر' : null;
   if (id) {
-    const r = await api.userUpdate({ id, name, role });
-    if (!r.ok) return toast('تعذّر التحديث');
+    const before = (JSON.parse($('#usersBody').dataset.cache || '[]').find((x) => x.id === id) || {}).cardUid || '';
+    const r = await api.userUpdate({ id, name, role, cardUid });
+    if (!r.ok) return toast(cardErr(r) || 'تعذّر التحديث');
     if (pass) {
       const r2 = await api.userResetPassword({ id, password: pass });
       if (!r2.ok) return toast('تعذّر تغيير كلمة المرور');
     }
+    audit('تعديل مستخدم', `@${$('#usUsername').value} — ${name} (${role === 'admin' ? 'مدير' : 'مدرّس'})` + (before !== cardUid ? ` • بطاقة المدرّس: ${cardUid ? 'عُيّنت/تغيّرت' : 'أُزيلت'}` : ''));
+    if (pass) audit('تغيير كلمة مرور', `المستخدم @${$('#usUsername').value}`);
     toast('تم التحديث');
   } else {
     if (!pass) return toast('كلمة المرور مطلوبة');
-    const r = await api.userCreate({ username, password: pass, name, role });
-    if (!r.ok) return toast(r.error === 'exists' ? 'اسم المستخدم مستخدم بالفعل' : 'تعذّر الإنشاء');
+    const r = await api.userCreate({ username, password: pass, name, role, cardUid });
+    if (!r.ok) return toast(r.error === 'exists' ? 'اسم المستخدم مستخدم بالفعل' : (cardErr(r) || 'تعذّر الإنشاء'));
+    audit('إنشاء مستخدم', `@${username} (${role === 'admin' ? 'مدير' : 'مدرّس'})${cardUid ? ' — مع بطاقة' : ''}`);
     toast('تم إنشاء المستخدم');
   }
   resetUserForm(); renderUsers();
@@ -794,7 +1015,7 @@ async function renderUsers() {
   const list = await api.usersList();
   $('#usersBody').innerHTML = list.length
     ? list.map((u, i) => `<tr>
-        <td>${i + 1}</td><td class="ltr">${esc(u.username)}</td><td>${esc(u.name)}</td>
+        <td>${i + 1}</td><td class="ltr">${esc(u.username)}</td><td>${esc(u.name)}${u.cardUid ? ' 💳' : ''}</td>
         <td>${u.role === 'admin' ? 'مدير' : 'مدرّس'}</td>
         <td>
           <button class="btn sm" data-act="edit" data-id="${u.id}">تعديل</button>
@@ -808,7 +1029,7 @@ $('#usersBody').addEventListener('click', async (e) => {
   const list = JSON.parse($('#usersBody').dataset.cache || '[]');
   const u = list.find((x) => x.id === b.dataset.id); if (!u) return;
   if (b.dataset.act === 'edit') {
-    $('#usId').value = u.id; $('#usUsername').value = u.username; $('#usName').value = u.name; $('#usRole').value = u.role;
+    $('#usId').value = u.id; $('#usUsername').value = u.username; $('#usName').value = u.name; $('#usRole').value = u.role; $('#usCard').value = u.cardUid || '';
     $('#usUsername').disabled = true;
     $('#usPass').required = false;
     $('#usPassWrap').querySelector('input').placeholder = 'اتركه فارغاً لعدم التغيير';
@@ -816,7 +1037,7 @@ $('#usersBody').addEventListener('click', async (e) => {
   } else if (b.dataset.act === 'del') {
     if (confirm(`حذف المستخدم "${u.name}"؟`)) {
       const r = await api.userDelete(u.id);
-      if (r.ok) renderUsers(); else toast('تعذّر الحذف');
+      if (r.ok) { audit('حذف مستخدم', `@${u.username} (${u.name})`); renderUsers(); } else toast('تعذّر الحذف');
     }
   }
 });

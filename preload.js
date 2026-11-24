@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('api', {
   userCreate: (payload) => ipcRenderer.invoke('users:create', payload),
   userUpdate: (payload) => ipcRenderer.invoke('users:update', payload),
   userResetPassword: (payload) => ipcRenderer.invoke('users:resetPassword', payload),
+  authConfirm: (payload) => ipcRenderer.invoke('auth:confirm', payload),
   userDelete: (id) => ipcRenderer.invoke('users:delete', id),
   pickImage: () => ipcRenderer.invoke('img:pick'),
   importStudentsExcel: () => ipcRenderer.invoke('students:importExcel'),
@@ -15,5 +16,14 @@ contextBridge.exposeInMainWorld('api', {
   exportBackup: () => ipcRenderer.invoke('backup:export'),
   backupsDir: () => ipcRenderer.invoke('backup:dir'),
   openBackupsFolder: () => ipcRenderer.invoke('backup:openFolder'),
-  importBackup: () => ipcRenderer.invoke('backup:import')
+  savePdf: (html, name) => ipcRenderer.invoke('report:savePdf', html, name),
+  saveXlsx: (name, sheet, rows, widths, bold) => ipcRenderer.invoke('report:saveXlsx', name, sheet, rows, widths, bold),
+  importBackup: () => ipcRenderer.invoke('backup:import'),
+  lanList: () => ipcRenderer.invoke('lan:list'),
+  lanAdd: (d) => ipcRenderer.invoke('lan:add', d),
+  lanSetToken: (d) => ipcRenderer.invoke('lan:setToken', d),
+  lanRemove: (id) => ipcRenderer.invoke('lan:remove', id),
+  lanPing: (id) => ipcRenderer.invoke('lan:ping', id),
+  lanCall: (d) => ipcRenderer.invoke('lan:call', d),
+  lanScan: () => ipcRenderer.invoke('lan:scan')
 });
