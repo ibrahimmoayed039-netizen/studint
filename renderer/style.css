@@ -303,3 +303,35 @@ input[type=checkbox]{width:22px;height:22px;padding:0;flex:none;accent-color:var
 .auth .p-title{text-align:center}
 .auth label{margin:10px 0}
 .auth input{width:100%}
+
+/* ============ تبويب المباشر ============ */
+.lv-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.lv-bar b{font-size:22px;direction:ltr}
+.lv-inl{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--mut)}
+.lv-inl select{width:auto;padding:6px 10px}
+.lv-h{margin:22px 0 10px}
+.lv-alert{display:flex;gap:10px;align-items:center;border-radius:14px;padding:10px 14px;margin-bottom:8px;border:1px solid var(--bd);
+  background:linear-gradient(145deg,rgba(245,165,36,.28),rgba(245,165,36,.1));border-color:rgba(245,165,36,.55)}
+.lv-alert.bad{background:linear-gradient(145deg,rgba(240,68,107,.3),rgba(240,68,107,.1));border-color:rgba(240,68,107,.6)}
+.lv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;margin-bottom:20px}
+.lv-card{border-radius:var(--r);padding:16px;display:grid;gap:10px;align-content:start;
+  background:linear-gradient(145deg,rgba(255,255,255,.12),rgba(255,255,255,.04));border:1px solid var(--bd);box-shadow:var(--sh-lg),var(--hl)}
+.lv-card.busy{border-color:rgba(240,68,107,.6);box-shadow:var(--sh-lg),0 0 0 1px rgba(240,68,107,.35),0 0 26px -6px rgba(240,68,107,.5)}
+.lv-card.free{border-color:rgba(25,195,125,.5)}
+.lv-card.off{opacity:.6}
+.lv-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.lv-head b{font-size:17px}
+.lv-pill{font-size:12px;font-weight:700;padding:3px 10px;border-radius:30px;border:1px solid var(--bd2)}
+.lv-pill.busy{background:rgba(240,68,107,.3);color:#ffd0da}
+.lv-pill.free{background:rgba(25,195,125,.3);color:#c9ffe6}
+.lv-pill.off{background:rgba(255,255,255,.12);color:var(--mut)}
+.lv-ses{border-top:1px dashed var(--bd);padding-top:8px;display:grid;gap:6px;font-size:14px}
+.lv-nums{display:flex;gap:12px;font-size:13px;color:var(--mut)}
+.lv-nums b{color:var(--txt);font-size:18px}
+.lv-prog{height:10px;border-radius:10px;background:rgba(255,255,255,.12);overflow:hidden;display:flex}
+.lv-prog i{display:block;height:100%}
+.lv-prog .p{background:linear-gradient(90deg,var(--ok),#7af0bb)}
+.lv-prog .l{background:linear-gradient(90deg,var(--warn),#ffd27a)}
+.lv-recent{font-size:12px;color:var(--mut)}
+.lv-next{font-size:13px;color:var(--mut)}
+#live:fullscreen{overflow:auto;padding:24px;background:linear-gradient(160deg,var(--bg1),var(--bg2))}

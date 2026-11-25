@@ -84,13 +84,17 @@ function publicDb(d) {
 }
 
 /** يمنع تكرار البطاقة بين الطلاب والمستخدمين. يُرجع 'student' أو 'user' أو null. */
-function cardConflict(d, uid, exceptUserId) {
-  if (!uid) return null;
-  if (d.students.some((s) => (s.cardUid || '') === uid)) return 'student';
-  if (d.users.some((u) => (u.cardUid || '') === uid && u.id !== exceptUserId)) return 'user';
+function cardConflict(d, cards, exceptUserId) {
+  for (const uid of cardsOf(cards)) {
+    if (d.students.some((s) => (s.cardUid || '') === uid)) return 'student';
+    if (d.users.some((u) => cardsOf(u.cardUid).includes(uid) && u.id !== exceptUserId)) return 'user';
+  }
   return null;
 }
 const normCard = (s) => String(s || '').trim().toUpperCase();
+/** بطاقات المستخدم مخزّنة نصاً مفصولة بفاصلة: يمكن لمستخدم واحد أن يملك عدة بطاقات (أكثر من أستاذ). */
+const cardsOf = (s) => [...new Set(String(s || '').split(/[,;،\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean))];
+const normCards = (s) => cardsOf(s).join(',');
 
 function saveDb(data) {
   const tmp = dbFile() + '.tmp';
@@ -142,7 +146,7 @@ ipcMain.handle('auth:confirm', (_e, { userId, password, uid } = {}) => {
   const d = loadDb();
   if (uid) {
     const c = normCard(uid);
-    const u = c && d.users.find((x) => (x.cardUid || '') === c);
+    const u = c && d.users.find((x) => cardsOf(x.cardUid).includes(c));
     return u ? { ok: true, via: 'card', name: u.name } : { ok: false };
   }
   if (!password) return { ok: false };
@@ -160,7 +164,7 @@ ipcMain.handle('users:create', (_e, { username, password, name, role, cardUid })
   username = String(username || '').trim();
   if (!username || !password) return { ok: false, error: 'missing' };
   if (d.users.some((u) => u.username.toLowerCase() === username.toLowerCase())) return { ok: false, error: 'exists' };
-  cardUid = normCard(cardUid);
+  cardUid = normCards(cardUid);
   const cc = cardConflict(d, cardUid, '');
   if (cc) return { ok: false, error: 'card_' + cc };
   const { salt, hash } = hashPassword(password);
@@ -176,7 +180,7 @@ ipcMain.handle('users:update', (_e, { id, name, role, cardUid }) => {
   if (name !== undefined) u.name = name;
   if (role !== undefined) u.role = role === 'admin' ? 'admin' : 'teacher';
   if (cardUid !== undefined) {
-    const c = normCard(cardUid);
+    const c = normCards(cardUid);
     const cc = cardConflict(d, c, id);
     if (cc) return { ok: false, error: 'card_' + cc };
     u.cardUid = c;
@@ -203,6 +207,13 @@ ipcMain.handle('users:delete', (_e, id) => {
   if (d.users.length === before) return { ok: false };
   saveDb(d);
   return { ok: true };
+});
+
+/* إصلاح توقف الإدخال بعد نوافذ alert/confirm الأصلية (خلل معروف في Electron على ويندوز) */
+ipcMain.on('win:refocus', (e) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  if (!w || w.isDestroyed()) return;
+  w.blur(); w.focus(); e.sender.focus();
 });
 
 function createWindow() {
@@ -366,8 +377,8 @@ ipcMain.handle('lan:ping', async (_e, id) => {
 ipcMain.handle('lan:call', async (_e, { id, method, path: p, body }) => {
   const d = lanLoad().find((x) => x.id === id);
   if (!d) return { status: 0, error: 'الجهاز غير موجود' };
-  if (!/^\/api\/schedule(\/(save|delete|replace))?$/.test(String(p))) return { status: 0, error: 'مسار غير مسموح' };
-  return lanHttp(d.host, d.port, decTok(d.tok), method === 'POST' ? 'POST' : 'GET', p, body || null, 8000);
+  if (!/^\/api\/(schedule(\/(save|delete|replace))?|live|report)$/.test(String(p))) return { status: 0, error: 'مسار غير مسموح' };
+  return lanHttp(d.host, d.port, decTok(d.tok), method === 'POST' ? 'POST' : 'GET', p, body || null, p === '/api/report' ? 60000 : 8000);
 });
 ipcMain.handle('lan:scan', () => lanScan());
 

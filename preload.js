@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('api', {
   savePdf: (html, name) => ipcRenderer.invoke('report:savePdf', html, name),
   saveXlsx: (name, sheet, rows, widths, bold) => ipcRenderer.invoke('report:saveXlsx', name, sheet, rows, widths, bold),
   importBackup: () => ipcRenderer.invoke('backup:import'),
+  refocus: () => ipcRenderer.send('win:refocus'),
   lanList: () => ipcRenderer.invoke('lan:list'),
   lanAdd: (d) => ipcRenderer.invoke('lan:add', d),
   lanSetToken: (d) => ipcRenderer.invoke('lan:setToken', d),

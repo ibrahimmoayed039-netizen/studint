@@ -1,9 +1,33 @@
 /* تبويب «الأجهزة»: التحكم بجداول هواتف الأندرويد عبر الشبكة المحلية.
    كل الاتصالات تمر عبر main.js (IPC) والرمز لا يصل للواجهة بعد حفظه. */
+/* ---------- حفظ المجموعات والمواد المُدخلة سابقاً لإعادة استعمالها ---------- */
+const dvMemGet = (k) => { try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch { return []; } };
+function dvMemAdd(k, v) {
+  v = String(v || '').trim(); if (!v) return;
+  const list = dvMemGet(k).filter((x) => x !== v); list.unshift(v);
+  try { localStorage.setItem(k, JSON.stringify(list.slice(0, 100))); } catch {}
+}
+function fillDvSuggestions() {
+  const items = dvData ? dvData.items : [];
+  const uniq = (a) => [...new Set(a.map((x) => String(x || '').trim()).filter(Boolean))];
+  const groups = uniq([...dvMemGet('dvGroups'), ...items.map((x) => x.group), ...(typeof db !== 'undefined' ? db.students.map((s) => s.grade) : [])]);
+  const subjects = uniq([...dvMemGet('dvSubjects'), ...items.map((x) => x.subject)]);
+  const opt = (a) => a.map((x) => `<option value="${esc(x)}"></option>`).join('');
+  $('#dvGroupList').innerHTML = opt(groups);
+  $('#dvSubjectList').innerHTML = opt(subjects);
+}
+
 let dvDevices = [];
 let dvCur = null;      // الجهاز المفتوح
 let dvData = null;     // آخر رد من GET /api/schedule
 
+/* رسالة خطأ داخل الصفحة بدل alert (لا تُفقد التركيز) */
+function dvAlert(msg) {
+  const el = $('#dvMsg'); el.textContent = msg; el.hidden = false;
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  toast(msg.length > 40 ? 'تعذّر الحفظ — انظر الرسالة الحمراء' : msg);
+}
+const dvClearMsg = () => { $('#dvMsg').hidden = true; };
 const dvErr = (r) => (r && (r.error || (r.data && r.data.error))) || 'فشل الطلب';
 const dvCall = (id, method, path, body) => api.lanCall({ id, method, path, body });
 
@@ -41,10 +65,9 @@ $('#dvBody').addEventListener('click', async (e) => {
     return renderDevices();
   }
   if (b.dataset.act === 'tok') {
-    const t = prompt(`رمز الاتصال الجديد لـ «${d.name}» (6 أرقام):`);
-    if (t === null) return;
-    const r = await api.lanSetToken({ id: d.id, token: t.trim() });
-    toast(r.ok ? 'تم حفظ الرمز' : r.error);
+    $('#tokTitle').textContent = `🔑 رمز الاتصال لـ «${d.name}»`;
+    $('#tokInput').value = ''; $('#tokModal').hidden = false; $('#tokInput').focus();
+    tokDevice = d.id;
   }
 });
 
@@ -89,15 +112,16 @@ $('#dvRefresh').addEventListener('click', () => dvCur && openDevice(dvCur, $('#d
 $('#dvOwner').addEventListener('change', drawItems);
 
 async function openDevice(id, keepOwner) {
+  dvClearMsg();
   const r = await dvCall(id, 'GET', '/api/schedule');
-  if (r.status !== 200 || !r.data || !r.data.ok) return alert(dvErr(r));
+  if (r.status !== 200 || !r.data || !r.data.ok) return dvAlert(dvErr(r));
   dvCur = id; dvData = r.data;
   const d = dvDevices.find((x) => x.id === id);
   $('#dvTitle').textContent = `جدول «${d ? d.name : ''}» — ${dvData.school || ''}`;
   $('#dvOwner').innerHTML = dvData.users.map((u) => `<option value="${esc(u.id)}">${esc(u.name)} (${u.role === 'admin' ? 'مدير' : 'مدرّس'})</option>`).join('');
   if (keepOwner && dvData.users.some((u) => u.id === keepOwner)) $('#dvOwner').value = keepOwner;
   $('#dvEditor').hidden = false; $('#dvCopyBox').hidden = true;
-  resetDvForm(); drawItems();
+  resetDvForm(); drawItems(); fillDvSuggestions();
   $('#dvEditor').scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -131,7 +155,7 @@ $('#dvItems').addEventListener('click', async (e) => {
     $('#dvForm').scrollIntoView({ behavior: 'smooth' });
   } else if (confirm(`حذف حصة «${s.subject}» من الهاتف؟`)) {
     const r = await dvCall(dvCur, 'POST', '/api/schedule/delete', { id: s.id });
-    if (r.status !== 200) return alert(dvErr(r));
+    if (r.status !== 200) return dvAlert(dvErr(r));
     audit('حذف حصة من هاتف', `${devName()} — ${DAY_NAMES[s.day]} ${s.start} ${s.subject}`);
     toast('تم الحذف'); openDevice(dvCur, $('#dvOwner').value);
   }
@@ -140,7 +164,7 @@ $('#dvItems').addEventListener('click', async (e) => {
 const devName = () => { const d = dvDevices.find((x) => x.id === dvCur); return d ? d.name : ''; };
 
 $('#dvForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
+  e.preventDefault(); dvClearMsg();
   const item = {
     id: $('#dvId').value || undefined, ownerId: $('#dvOwner').value, day: Number($('#dvDay').value),
     subject: $('#dvSubject').value.trim(), group: $('#dvGroup').value.trim(), start: $('#dvStart').value,
@@ -148,8 +172,9 @@ $('#dvForm').addEventListener('submit', async (e) => {
   };
   if (item.end && item.end <= item.start) return toast('وقت الانتهاء يجب أن يكون بعد وقت البدء');
   const r = await dvCall(dvCur, 'POST', '/api/schedule/save', { item });
-  if (r.status !== 200) return alert(dvErr(r));
+  if (r.status !== 200) return dvAlert(dvErr(r));
   audit(item.id ? 'تعديل حصة في هاتف' : 'إضافة حصة في هاتف', `${devName()} — ${DAY_NAMES[item.day]} ${item.start} ${item.subject}`);
+  dvMemAdd('dvGroups', item.group); dvMemAdd('dvSubjects', item.subject);
   toast('تم الحفظ في الهاتف'); openDevice(dvCur, item.ownerId);
 });
 
@@ -166,7 +191,7 @@ $('#dvTarget').addEventListener('change', loadTargetUsers);
 async function loadTargetUsers() {
   $('#dvTargetOwner').innerHTML = '';
   const r = await dvCall($('#dvTarget').value, 'GET', '/api/schedule');
-  if (r.status !== 200 || !r.data || !r.data.ok) return alert(dvErr(r));
+  if (r.status !== 200 || !r.data || !r.data.ok) return dvAlert(dvErr(r));
   $('#dvTargetOwner').innerHTML = r.data.users.map((u) => `<option value="${esc(u.id)}">${esc(u.name)} (${u.role === 'admin' ? 'مدير' : 'مدرّس'})</option>`).join('');
 }
 
@@ -181,7 +206,19 @@ $('#dvCopyGo').addEventListener('click', async () => {
     ownerId: tOwner,
     items: items.map((s) => ({ day: s.day, subject: s.subject, group: s.group, start: s.start, end: s.end, lateMin: s.lateMin, auto: s.auto }))
   });
-  if (r.status !== 200) return alert(dvErr(r));
+  if (r.status !== 200) return dvAlert(dvErr(r));
   audit('نسخ جدول إلى هاتف', `${devName()} ← ${tName} (${items.length} حصة)`);
   toast('تم النسخ'); $('#dvCopyBox').hidden = true;
+});
+
+/* ---------- نافذة تغيير الرمز (بديل prompt غير المدعومة في Electron) ---------- */
+let tokDevice = null;
+const tokClose = () => { $('#tokModal').hidden = true; tokDevice = null; };
+$('#tokCancel').addEventListener('click', tokClose);
+$('#tokInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#tokOk').click(); if (e.key === 'Escape') tokClose(); });
+$('#tokOk').addEventListener('click', async () => {
+  if (!tokDevice) return;
+  const r = await api.lanSetToken({ id: tokDevice, token: $('#tokInput').value.trim() });
+  if (!r.ok) return toast(r.error);
+  tokClose(); toast('تم حفظ الرمز');
 });

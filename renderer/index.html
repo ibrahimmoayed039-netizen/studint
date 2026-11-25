@@ -37,6 +37,8 @@
   <button class="tab" data-tab="log" data-roles="admin,teacher">📋 سجل الحضور</button>
   <button class="tab" data-tab="reports" data-roles="admin,teacher">📊 التقارير والغياب</button>
   <button class="tab" data-tab="users" data-roles="admin">🔑 المستخدمون</button>
+  <button class="tab" data-tab="live" data-roles="admin">📺 المباشر</button>
+  <button class="tab" data-tab="pull" data-roles="admin">📥 تقارير الأجهزة</button>
   <button class="tab" data-tab="devices" data-roles="admin">📡 الأجهزة</button>
   <button class="tab" data-tab="audit" data-roles="admin">🛡️ سجل التدقيق</button>
   <button class="tab" data-tab="settings" data-roles="admin">⚙️ الإعدادات</button>
@@ -122,7 +124,60 @@
   </section>
 
   <!-- أجهزة الأندرويد على الشبكة -->
+  <!-- المباشر: أي المراحل/القاعات مشغولة وكم حاضر -->
+  <section id="live" class="panel">
+    <div class="lv-bar">
+      <b id="lvClock"></b>
+      <span class="hint" id="lvUpdated">—</span>
+      <span style="flex:1"></span>
+      <label class="lv-inl">تحديث كل
+        <select id="lvEvery"><option value="5">5 ث</option><option value="10" selected>10 ث</option><option value="30">30 ث</option><option value="0">يدوي</option></select>
+      </label>
+      <button class="btn sm" id="lvNow">🔄 تحديث</button>
+      <button class="btn sm" id="lvCsv">⬇️ CSV</button>
+      <button class="btn sm" id="lvFull">🖥️ ملء الشاشة</button>
+    </div>
+    <div class="stats" id="lvStats"></div>
+    <div id="lvAlerts"></div>
+    <h3 class="lv-h">🎓 المراحل</h3>
+    <table><thead><tr><th>المرحلة</th><th>الحالة</th><th>المكان</th><th>المادة / المدرّس</th><th>الحضور</th><th>النسبة</th></tr></thead>
+      <tbody id="lvStages"><tr><td colspan="6" class="empty">جارٍ التحميل...</td></tr></tbody></table>
+    <h3 class="lv-h">📡 القاعات والأجهزة</h3>
+    <div class="lv-grid" id="lvCards"></div>
+    <p class="hint">يُجلب الوضع من الهواتف المضافة في تبويب «الأجهزة» (يلزم تحديث التطبيق في الهاتف إلى v15 أو أحدث)، ويُضاف إليها المحاضرات الجارية على هذا الحاسوب.</p>
+  </section>
+
+  <!-- سحب تقارير الطلاب من هواتف الأندرويد -->
+  <section id="pull" class="panel">
+    <div class="card" style="max-width:none">
+      <h3>📥 سحب تقارير الحضور من الأجهزة</h3>
+      <div class="toolbar">
+        <label>من <input type="date" id="plFrom"></label>
+        <label>إلى <input type="date" id="plTo"></label>
+        <button class="btn sm" id="plMonth">هذا الشهر</button>
+        <button class="btn primary" id="plGo">⬇️ سحب التقارير</button>
+      </div>
+      <div id="plDevs" class="row" style="flex-wrap:wrap;gap:14px"></div>
+      <div id="plStatus" class="hint"></div>
+    </div>
+    <div class="stats" id="plStats" hidden></div>
+    <div class="toolbar" id="plTools" hidden>
+      <label>المرحلة <select id="plGrade"><option value="">الكل</option></select></label>
+      <label>الجهاز <select id="plDevice"><option value="">الكل</option></select></label>
+      <label>بحث <input id="plQ" placeholder="اسم الطالب"></label>
+      <label>الترتيب <select id="plSort"><option value="name">الاسم</option><option value="low">الأقل حضوراً أولاً</option></select></label>
+      <label class="lv-inl"><input type="checkbox" id="plMerge"> دمج الطالب المتكرر بين الأجهزة</label>
+      <button class="btn primary" id="plPdf">📄 PDF</button>
+      <button class="btn" id="plXlsx">📊 Excel</button>
+      <button class="btn" id="plCsv">CSV</button>
+    </div>
+    <table id="plTable" hidden><thead><tr><th>#</th><th>الاسم</th><th>الصف</th><th>الجهاز</th><th>الحصص</th><th>حاضر</th><th>متأخر</th><th>غائب</th><th>النسبة</th></tr></thead>
+    <tbody id="plBody"></tbody></table>
+    <p class="hint">تُسحب البيانات الخام من الهواتف المحددة (يلزم أندرويد v16 أو أحدث) وتُحسب النسب هنا بنفس منطق التقرير الشهري. لا تُحفظ البيانات على الحاسوب، وتُسجَّل عملية السحب في سجل التدقيق.</p>
+  </section>
+
   <section id="devices" class="panel">
+    <div id="dvMsg" class="login-error" style="max-width:none" hidden></div>
     <div class="card">
       <h3>📡 هواتف الأندرويد على الشبكة المحلية</h3>
       <p class="hint">في كل هاتف: الإعدادات ← «التحكم من الحاسوب» ← تفعيل. سيظهر عنوان الهاتف ورمز الاتصال (6 أرقام). يجب أن يكون الحاسوب والهواتف على نفس شبكة Wi-Fi.</p>
@@ -168,10 +223,10 @@
               <option value="3">الأربعاء</option><option value="4">الخميس</option><option value="5">الجمعة</option><option value="6">السبت</option>
             </select>
           </label>
-          <label>اسم المادة<input id="dvSubject" required></label>
+          <label>اسم المادة<input id="dvSubject" list="dvSubjectList" autocomplete="off" required><datalist id="dvSubjectList"></datalist></label>
         </div>
         <div class="row2">
-          <label>المجموعة (الصف / الشعبة)<input id="dvGroup" placeholder="فارغ = كل الطلاب"></label>
+          <label>المجموعة (الصف / الشعبة)<input id="dvGroup" list="dvGroupList" autocomplete="off" placeholder="فارغ = كل الطلاب"><datalist id="dvGroupList"></datalist></label>
           <label>يُعتبر متأخراً بعد (دقيقة)<input type="number" id="dvLate" min="0" value="10"></label>
         </div>
         <div class="row2">
@@ -274,12 +329,12 @@
           <option value="admin">مدير (يرى كل شيء)</option>
         </select>
       </label>
-      <label>بطاقة المدرّس الخاصة (اختياري — لتأكيد الحذف بدل كلمة المرور)
-        <input id="usCard" autocomplete="off" placeholder="اضغط «قراءة البطاقة» ثم مرّرها">
+      <label>بطاقات المدرّسين (اختياري — يمكن أكثر من بطاقة لنفس المستخدم، وأي واحدة تؤكّد الحذف بدل كلمة المرور)
+        <input id="usCard" autocomplete="off" placeholder="اضغط «قراءة البطاقة» ثم مرّر بطاقة كل أستاذ"> 
       </label>
       <div class="row">
         <button class="btn" type="button" id="usReadBtn">📇 قراءة البطاقة</button>
-        <button class="btn" type="button" id="usCardClear">إزالة البطاقة</button>
+        <button class="btn" type="button" id="usCardClear">إزالة كل البطاقات</button>
       </div>
       <label id="usPassWrap">كلمة المرور<input id="usPass" type="password" autocomplete="new-password"></label>
       <div class="row">
@@ -400,9 +455,21 @@
     </div>
   </div>
 </div>
+<div id="tokModal" class="picker" hidden>
+  <div class="p-card">
+    <div class="p-title" id="tokTitle">🔑 رمز الاتصال</div>
+    <label>رمز الاتصال الجديد (6 أرقام)<input id="tokInput" dir="ltr" maxlength="6" inputmode="numeric" autocomplete="off"></label>
+    <div class="row" style="justify-content:center;margin:10px 0 0">
+      <button class="btn primary" id="tokOk">حفظ</button>
+      <button class="btn" id="tokCancel">إلغاء</button>
+    </div>
+  </div>
+</div>
 <div id="toast"></div>
 <script src="app.js"></script>
 <script src="devices.js"></script>
+<script src="live.js"></script>
+<script src="pull.js"></script>
 <script src="fx.js"></script>
 </body>
 </html>

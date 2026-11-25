@@ -1,4 +1,11 @@
 const $ = (s) => document.querySelector(s);
+/* بعد إغلاق alert/confirm الأصلية يفقد Electron تركيز النافذة فتتوقف الحقول عن استقبال الإدخال؛ نعيد التركيز يدوياً. */
+(() => {
+  const nativeAlert = window.alert.bind(window), nativeConfirm = window.confirm.bind(window);
+  const fix = () => { try { api.refocus(); } catch {} setTimeout(() => { try { api.refocus(); } catch {} }, 60); };
+  window.alert = (m) => { nativeAlert(m); fix(); };
+  window.confirm = (m) => { const r = nativeConfirm(m); fix(); return r; };
+})();
 let db = { students: [], attendance: [], sessions: [], users: [], schedule: [], settings: {} };
 let currentUser = null;
 const isAdmin = () => currentUser && currentUser.role === 'admin';
@@ -8,6 +15,8 @@ const pad = (n) => String(n).padStart(2, '0');
 const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const nowTime = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
 const normUid = (s) => String(s || '').trim().toUpperCase();
+/** بطاقات المستخدم: عدة أرقام مفصولة بفاصلة */
+const cardsOf = (s) => [...new Set(String(s || '').split(/[,;،\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean))];
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const persist = () => api.save(db);
 /* ---------- سجل التدقيق ---------- */
@@ -44,7 +53,7 @@ const statusBadge = (s) => s === 'late'
 /* ---------- التبويبات ---------- */
 document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 function switchTab(name) {
-  const allowed = isAdmin() ? ['scan', 'schedule', 'students', 'log', 'reports', 'users', 'devices', 'audit', 'settings'] : ['scan', 'schedule', 'log', 'reports'];
+  const allowed = isAdmin() ? ['scan', 'schedule', 'students', 'log', 'reports', 'users', 'live', 'pull', 'devices', 'audit', 'settings'] : ['scan', 'schedule', 'log', 'reports'];
   if (!allowed.includes(name)) name = 'scan';
   document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === name));
   document.querySelectorAll('.panel').forEach((x) => x.classList.toggle('active', x.id === name));
@@ -54,6 +63,8 @@ function switchTab(name) {
   if (name === 'log') renderLog();
   if (name === 'reports') renderReports();
   if (name === 'users') renderUsers();
+  if (name === 'live' && typeof renderLive === 'function') renderLive();
+  if (name === 'pull' && typeof renderPull === 'function') renderPull();
   if (name === 'devices' && typeof renderDevices === 'function') renderDevices();
   if (name === 'audit') renderAudit();
   if (name === 'settings') renderSettings();
@@ -545,7 +556,7 @@ $('#stImportBtn').addEventListener('click', async () => {
   if (!r.ok) return toast('تعذّر قراءة الملف: ' + (r.error || ''));
   if (!r.rows.length) return toast('لم يُعثر على أي صف باسم طالب في الملف');
   let added = 0, uidConflicts = 0;
-  const teacherCards = new Set((await api.usersList()).map((u) => u.cardUid).filter(Boolean));
+  const teacherCards = new Set((await api.usersList()).flatMap((u) => cardsOf(u.cardUid)));
   r.rows.forEach((row) => {
     let cardUid = normUid(row.cardUid);
     if (cardUid && (teacherCards.has(cardUid) || db.students.some((s) => s.cardUid === cardUid))) { cardUid = ''; uidConflicts++; }
@@ -565,7 +576,7 @@ $('#studentForm').addEventListener('submit', async (e) => {
   const cardUid = normUid($('#stUid').value);
   const photo = $('#stPhoto').value || '';
   if (cardUid && db.students.some((s) => s.cardUid === cardUid && s.id !== id)) return toast('رقم البطاقة مستخدم لطالب آخر');
-  if (cardUid && (await api.usersList()).some((u) => u.cardUid === cardUid)) return toast('هذه البطاقة مخصّصة لمدرّس');
+  if (cardUid && (await api.usersList()).some((u) => cardsOf(u.cardUid).includes(cardUid))) return toast('هذه البطاقة مخصّصة لمدرّس');
   if (id) {
     const s = db.students.find((x) => x.id === id);
     const ch = [];
@@ -973,12 +984,21 @@ function resetUserForm() {
   $('#usUsername').disabled = false;
   $('#usPass').required = true;
   $('#usPassWrap').querySelector('input').placeholder = '';
-  $('#usCard').placeholder = 'اضغط «قراءة البطاقة» ثم مرّرها';
+  $('#usCard').placeholder = 'اضغط «قراءة البطاقة» ثم مرّر بطاقة كل أستاذ';
 }
-$('#usReadBtn').addEventListener('click', () => { const i = $('#usCard'); i.value = ''; i.placeholder = 'مرّر البطاقة الآن...'; i.focus(); });
+/* حقل البطاقات يقبل عدة بطاقات مفصولة بفاصلة؛ كل Enter من القارئ يضيف فاصلة فتُمسح البطاقات واحدة تلو الأخرى */
+$('#usReadBtn').addEventListener('click', () => {
+  const i = $('#usCard');
+  if (i.value && !i.value.endsWith(',')) i.value += ',';
+  i.placeholder = 'مرّر البطاقة الآن...'; i.focus();
+});
 $('#usCardClear').addEventListener('click', () => { $('#usCard').value = ''; });
-$('#usCard').addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
-$('#usCard').addEventListener('keydown', (e) => { if (e.key !== 'Enter') return; e.preventDefault(); if (e.target.value) toast('تم قراءة رقم البطاقة'); });
+$('#usCard').addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9,]/g, '').replace(/,{2,}/g, ','); });
+$('#usCard').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return; e.preventDefault();
+  const i = e.target;
+  if (i.value && !i.value.endsWith(',')) { i.value += ','; toast('تمت قراءة البطاقة (' + cardsOf(i.value).length + ') — مرّر بطاقة أخرى لإضافتها'); }
+});
 $('#usCancel').addEventListener('click', resetUserForm);
 
 $('#userForm').addEventListener('submit', async (e) => {
@@ -988,7 +1008,7 @@ $('#userForm').addEventListener('submit', async (e) => {
   const name = $('#usName').value.trim();
   const role = $('#usRole').value;
   const pass = $('#usPass').value;
-  const cardUid = normUid($('#usCard').value);
+  const cardUid = cardsOf($('#usCard').value).join(',');
   const cardErr = (r) => r.error === 'card_student' ? 'هذه البطاقة مسجّلة لطالب' : r.error === 'card_user' ? 'هذه البطاقة مسجّلة لمستخدم آخر' : null;
   if (id) {
     const before = (JSON.parse($('#usersBody').dataset.cache || '[]').find((x) => x.id === id) || {}).cardUid || '';
@@ -998,14 +1018,14 @@ $('#userForm').addEventListener('submit', async (e) => {
       const r2 = await api.userResetPassword({ id, password: pass });
       if (!r2.ok) return toast('تعذّر تغيير كلمة المرور');
     }
-    audit('تعديل مستخدم', `@${$('#usUsername').value} — ${name} (${role === 'admin' ? 'مدير' : 'مدرّس'})` + (before !== cardUid ? ` • بطاقة المدرّس: ${cardUid ? 'عُيّنت/تغيّرت' : 'أُزيلت'}` : ''));
+    audit('تعديل مستخدم', `@${$('#usUsername').value} — ${name} (${role === 'admin' ? 'مدير' : 'مدرّس'})` + (before !== cardUid ? ` • بطاقات المدرّسين: ${cardUid ? cardsOf(before).length + ' ← ' + cardsOf(cardUid).length : 'أُزيلت'}` : ''));
     if (pass) audit('تغيير كلمة مرور', `المستخدم @${$('#usUsername').value}`);
     toast('تم التحديث');
   } else {
     if (!pass) return toast('كلمة المرور مطلوبة');
     const r = await api.userCreate({ username, password: pass, name, role, cardUid });
     if (!r.ok) return toast(r.error === 'exists' ? 'اسم المستخدم مستخدم بالفعل' : (cardErr(r) || 'تعذّر الإنشاء'));
-    audit('إنشاء مستخدم', `@${username} (${role === 'admin' ? 'مدير' : 'مدرّس'})${cardUid ? ' — مع بطاقة' : ''}`);
+    audit('إنشاء مستخدم', `@${username} (${role === 'admin' ? 'مدير' : 'مدرّس'})${cardUid ? ' — مع ' + cardsOf(cardUid).length + ' بطاقة' : ''}`);
     toast('تم إنشاء المستخدم');
   }
   resetUserForm(); renderUsers();
@@ -1015,7 +1035,7 @@ async function renderUsers() {
   const list = await api.usersList();
   $('#usersBody').innerHTML = list.length
     ? list.map((u, i) => `<tr>
-        <td>${i + 1}</td><td class="ltr">${esc(u.username)}</td><td>${esc(u.name)}${u.cardUid ? ' 💳' : ''}</td>
+        <td>${i + 1}</td><td class="ltr">${esc(u.username)}</td><td>${esc(u.name)}${u.cardUid ? ' 💳' + (cardsOf(u.cardUid).length > 1 ? '×' + cardsOf(u.cardUid).length : '') : ''}</td>
         <td>${u.role === 'admin' ? 'مدير' : 'مدرّس'}</td>
         <td>
           <button class="btn sm" data-act="edit" data-id="${u.id}">تعديل</button>
@@ -1029,7 +1049,7 @@ $('#usersBody').addEventListener('click', async (e) => {
   const list = JSON.parse($('#usersBody').dataset.cache || '[]');
   const u = list.find((x) => x.id === b.dataset.id); if (!u) return;
   if (b.dataset.act === 'edit') {
-    $('#usId').value = u.id; $('#usUsername').value = u.username; $('#usName').value = u.name; $('#usRole').value = u.role; $('#usCard').value = u.cardUid || '';
+    $('#usId').value = u.id; $('#usUsername').value = u.username; $('#usName').value = u.name; $('#usRole').value = u.role; $('#usCard').value = cardsOf(u.cardUid).join(',');
     $('#usUsername').disabled = true;
     $('#usPass').required = false;
     $('#usPassWrap').querySelector('input').placeholder = 'اتركه فارغاً لعدم التغيير';
