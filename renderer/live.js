@@ -199,3 +199,5 @@ $('#lvCsv').addEventListener('click', () => {
   lvSnap.local.forEach((s) => rows.push(['هذا الحاسوب', 'مشغول', s.group || 'الكل', s.subject, s.teacher, s.start, s.present, s.late, s.expected, Math.max(0, s.expected - s.present - s.late), lvPct(s)]));
   csvDownload(`live-${todayStr()}-${pad(new Date().getHours())}${pad(new Date().getMinutes())}.csv`, rows);
 });
+
+$('#lvWin').addEventListener('click', () => api.liveOpen());

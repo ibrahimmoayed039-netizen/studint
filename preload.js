@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   login: (username, password) => ipcRenderer.invoke('auth:login', username, password),
+  loginCard: (uid) => ipcRenderer.invoke('auth:cardLogin', uid),
   usersList: () => ipcRenderer.invoke('users:list'),
   userCreate: (payload) => ipcRenderer.invoke('users:create', payload),
   userUpdate: (payload) => ipcRenderer.invoke('users:update', payload),
@@ -26,5 +27,9 @@ contextBridge.exposeInMainWorld('api', {
   lanRemove: (id) => ipcRenderer.invoke('lan:remove', id),
   lanPing: (id) => ipcRenderer.invoke('lan:ping', id),
   lanCall: (d) => ipcRenderer.invoke('lan:call', d),
-  lanScan: () => ipcRenderer.invoke('lan:scan')
+  lanScan: () => ipcRenderer.invoke('lan:scan'),
+  liveOpen: () => ipcRenderer.invoke('live:open'),
+  liveLocal: () => ipcRenderer.invoke('live:local'),
+  livePin: (on) => ipcRenderer.invoke('live:pin', on),
+  liveFull: () => ipcRenderer.invoke('live:full')
 });

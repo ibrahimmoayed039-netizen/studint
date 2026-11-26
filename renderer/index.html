@@ -26,6 +26,7 @@
     <div id="loginNotice" class="login-notice" hidden></div>
     <div id="loginError" class="login-error" hidden></div>
     <button class="btn primary" type="submit">دخول</button>
+    <p class="hint">🪪 أو مرّر بطاقة المدرّس على القارئ للدخول مباشرة</p>
     <p class="hint">أول مرة؟ المستخدم: admin — كلمة المرور: 1234 (غيّرها من تبويب المستخدمين)</p>
   </form>
 </div>
@@ -136,6 +137,7 @@
       <button class="btn sm" id="lvNow">🔄 تحديث</button>
       <button class="btn sm" id="lvCsv">⬇️ CSV</button>
       <button class="btn sm" id="lvFull">🖥️ ملء الشاشة</button>
+      <button class="btn primary sm" id="lvWin">🪟 نافذة مستقلة</button>
     </div>
     <div class="stats" id="lvStats"></div>
     <div id="lvAlerts"></div>
@@ -167,7 +169,8 @@
       <label>بحث <input id="plQ" placeholder="اسم الطالب"></label>
       <label>الترتيب <select id="plSort"><option value="name">الاسم</option><option value="low">الأقل حضوراً أولاً</option></select></label>
       <label class="lv-inl"><input type="checkbox" id="plMerge"> دمج الطالب المتكرر بين الأجهزة</label>
-      <button class="btn primary" id="plPdf">📄 PDF</button>
+      <button class="btn primary" id="plPdf">📄 PDF (ملخص)</button>
+      <button class="btn primary" id="plDetail">📑 PDF تفصيلي</button>
       <button class="btn" id="plXlsx">📊 Excel</button>
       <button class="btn" id="plCsv">CSV</button>
     </div>

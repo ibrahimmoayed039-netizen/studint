@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>المراحل الشاغلة</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  body{overflow:auto}
+  .lw{position:relative;z-index:2;padding:18px 24px 30px;max-width:1500px;margin:0 auto}
+  .lw-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+  .lw-top h1{margin:0;font-size:24px}
+  .lw-clock{font-size:26px;font-weight:700;direction:ltr}
+  .lw-total{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+  .lw-big{flex:1;min-width:150px;border-radius:var(--r);padding:14px 18px;text-align:center;border:1px solid var(--bd);
+    background:linear-gradient(145deg,rgba(255,255,255,.14),rgba(255,255,255,.04));box-shadow:var(--sh-md),var(--hl)}
+  .lw-big b{display:block;font-size:46px;line-height:1.1}
+  .lw-big span{color:var(--mut);font-size:14px}
+  .lw-big.ok b{color:#7af0bb}.lw-big.late b{color:#ffd27a}.lw-big.bad b{color:#ff93ac}
+  .lw-h{margin:20px 0 10px;font-size:18px}
+  .lw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:16px}
+  .lw-card{border-radius:var(--r);padding:16px;display:grid;gap:9px;align-content:start;border:1px solid rgba(240,68,107,.6);
+    background:linear-gradient(145deg,rgba(255,255,255,.12),rgba(255,255,255,.04));box-shadow:var(--sh-lg),0 0 26px -8px rgba(240,68,107,.5)}
+  .lw-card.warn{border-color:rgba(245,165,36,.8)}
+  .lw-stage{font-size:22px;font-weight:700}
+  .lw-place{color:var(--mut);font-size:13px}
+  .lw-count{display:flex;align-items:baseline;gap:8px}
+  .lw-count b{font-size:40px;color:#7af0bb}
+  .lw-count span{color:var(--mut)}
+  .lw-prog{height:12px;border-radius:12px;background:rgba(255,255,255,.12);overflow:hidden;display:flex}
+  .lw-prog i{display:block;height:100%}.lw-prog .p{background:linear-gradient(90deg,var(--ok),#7af0bb)}.lw-prog .l{background:linear-gradient(90deg,var(--warn),#ffd27a)}
+  .lw-sub{font-size:13px;color:var(--mut)}
+  .lw-chips{display:flex;flex-wrap:wrap;gap:8px}
+  .lw-chip{padding:6px 14px;border-radius:30px;border:1px solid rgba(25,195,125,.5);background:rgba(25,195,125,.16);font-size:14px}
+  .lw-dev{font-size:13px;color:var(--mut);display:flex;gap:16px;flex-wrap:wrap}
+  .lw-empty{padding:30px;text-align:center;color:var(--mut);border:1px dashed var(--bd2);border-radius:var(--r)}
+  .lw-top select{width:auto;padding:6px 10px}
+</style>
+</head>
+<body>
+<div id="scene"><div class="grid"></div><div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div></div>
+<main class="lw">
+  <div class="lw-top">
+    <h1 id="lwSchool">المراحل الشاغلة</h1>
+    <span class="lw-clock" id="lwClock"></span>
+    <span class="hint" id="lwUpd">—</span>
+    <span style="flex:1"></span>
+    <select id="lwEvery"><option value="5">تحديث 5 ث</option><option value="10" selected>تحديث 10 ث</option><option value="30">تحديث 30 ث</option></select>
+    <button class="btn sm" id="lwNow">🔄</button>
+    <button class="btn sm" id="lwPin">📌 تثبيت فوق النوافذ</button>
+    <button class="btn sm" id="lwFull">⛶ ملء الشاشة</button>
+  </div>
+  <div class="lw-total" id="lwTotal"></div>
+  <h2 class="lw-h">🔴 المراحل الشاغلة الآن</h2>
+  <div class="lw-grid" id="lwBusy"></div>
+  <h2 class="lw-h">🟢 المراحل المتاحة</h2>
+  <div class="lw-chips" id="lwFree"></div>
+  <h2 class="lw-h">📡 حالة الأجهزة</h2>
+  <div class="lw-dev" id="lwDev"></div>
+</main>
+<script src="live-window.js"></script>
+</body>
+</html>

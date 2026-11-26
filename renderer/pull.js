@@ -145,3 +145,54 @@ $('#plPdf').addEventListener('click', async () => {
     <div class="foot">طُبع بتاريخ ${todayStr()}</div></body></html>`;
   if (await api.savePdf(html, plFile('pdf'))) toast('تم حفظ ملف PDF');
 });
+
+/* PDF تفصيلي: لكل محاضرة (حسب الجهاز ثم التاريخ) أسماء الحاضرين والمتأخرين والغائبين. يحترم تصفية المرحلة والجهاز. */
+$('#plDetail').addEventListener('click', async () => {
+  if (!plData.length) return toast('اسحب التقارير أولاً');
+  const group = $('#plGrade').value, devId = $('#plDevice').value;
+  const ar = (a, b) => a.localeCompare(b, 'ar');
+  const blocks = [];
+  plData.forEach(({ dev, data }) => {
+    if (devId && dev.id !== devId) return;
+    const recs = new Map(data.att.map((a) => [a[0] + '|' + a[1], a[2]]));
+    data.sessions.slice().sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start)).forEach((s) => {
+      if (group && s.group && s.group !== group) return;
+      const P = [], L = [], A = [];
+      data.students.forEach((st) => {
+        if ((s.group && s.group !== st.grade) || (group && st.grade !== group)) return;
+        const r = recs.get(s.id + '|' + st.id);
+        (r === 'p' ? P : r === 'l' ? L : A).push(st.name);
+      });
+      blocks.push({ dev: dev.name, s, P: P.sort(ar), L: L.sort(ar), A: A.sort(ar) });
+    });
+  });
+  if (!blocks.length) return toast('لا توجد محاضرات في هذا النطاق');
+  const logo = db.settings.logo ? `<img class="logo" src="${db.settings.logo}">` : '';
+  const names = (arr) => arr.length ? esc(arr.join('، ')) : '—';
+  let lastDev = null;
+  const body = blocks.map((b) => {
+    const head = b.dev !== lastDev ? `<h3>📱 ${esc(b.dev)}</h3>` : '';
+    lastDev = b.dev;
+    return `${head}<div class="ses"><div class="st"><b>${esc(b.s.date)}</b> ${esc(b.s.start)} — ${esc(b.s.subject)} — ${esc(b.s.group) || 'كل المراحل'}${b.s.teacher ? ' — ' + esc(b.s.teacher) : ''}
+      <span class="cnt">حاضر ${b.P.length} • متأخر ${b.L.length} • غائب ${b.A.length}</span></div>
+      <div class="ln ok"><b>الحاضرون:</b> ${names(b.P)}</div>
+      <div class="ln lt"><b>المتأخرون:</b> ${names(b.L)}</div>
+      <div class="ln ab"><b>الغائبون:</b> ${names(b.A)}</div></div>`;
+  }).join('');
+  const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><style>
+    @page { size: A4; margin: 14mm; }
+    body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; color: #111; font-size: 12px; }
+    .head { display: flex; align-items: center; gap: 16px; border-bottom: 3px solid #6d7cff; padding-bottom: 10px; margin-bottom: 8px; }
+    .logo { height: 72px; max-width: 120px; object-fit: contain; }
+    h1 { margin: 0; font-size: 24px; color: #2a3170; } h2 { margin: 2px 0; font-size: 15px; font-weight: 500; color: #444; }
+    h3 { margin: 16px 0 6px; font-size: 15px; color: #fff; background: #3d4a9e; padding: 5px 10px; border-radius: 6px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .ses { border: 1px solid #d5d9ee; border-radius: 6px; padding: 7px 10px; margin-bottom: 7px; page-break-inside: avoid; }
+    .st { font-size: 13px; margin-bottom: 4px; } .cnt { float: left; color: #555; font-size: 11px; }
+    .ln { line-height: 1.7; } .ok b { color: #0e8f5a; } .lt b { color: #c77f0a; } .ab b { color: #d32f57; }
+    .foot { margin-top: 14px; color: #888; font-size: 10px; text-align: center; }
+  </style></head><body>
+    <div class="head">${logo}<div><h1>${esc(db.settings.schoolName || 'حضور الطلبة')}</h1><h2>سجل الحضور التفصيلي (مسحوب من الأجهزة)</h2>
+    <div>الفترة: ${esc(plRange())} &nbsp;•&nbsp; ${group ? 'المرحلة: ' + esc(group) : 'كل المراحل'} &nbsp;•&nbsp; ${blocks.length} محاضرة</div></div></div>
+    ${body}<div class="foot">طُبع بتاريخ ${todayStr()}</div></body></html>`;
+  if (await api.savePdf(html, plFile('pdf').replace('devices-report', 'devices-detail'))) toast('تم حفظ ملف PDF التفصيلي');
+});

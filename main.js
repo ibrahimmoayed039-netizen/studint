@@ -141,6 +141,16 @@ ipcMain.handle('auth:login', (_e, username, password) => {
   return { ok: true, user: { id: u.id, username: u.username, name: u.name, role: u.role } };
 });
 
+/** الدخول ببطاقة المدرّس (للمدرّسين فقط؛ المدير يدخل بكلمة المرور). */
+ipcMain.handle('auth:cardLogin', (_e, uid) => {
+  const d = loadDb();
+  const c = normCard(uid);
+  const u = c && d.users.find((x) => cardsOf(x.cardUid).includes(c));
+  if (!u) return { ok: false, reason: 'unknown' };
+  if (u.role === 'admin') return { ok: false, reason: 'admin' };
+  return { ok: true, user: { id: u.id, username: u.username, name: u.name, role: u.role } };
+});
+
 /** تأكيد عملية حذف: كلمة مرور المستخدم الحالي (أو أي مدير) أو بطاقة مدرّس. */
 ipcMain.handle('auth:confirm', (_e, { userId, password, uid } = {}) => {
   const d = loadDb();
@@ -216,6 +226,48 @@ ipcMain.on('win:refocus', (e) => {
   w.blur(); w.focus(); e.sender.focus();
 });
 
+let liveWin = null;
+
+/* نافذة «المراحل الشاغلة» المستقلة (تُعرض على شاشة ثانية مثلاً) */
+ipcMain.handle('live:open', () => {
+  if (liveWin && !liveWin.isDestroyed()) { liveWin.show(); liveWin.focus(); return true; }
+  liveWin = new BrowserWindow({
+    width: 1100, height: 720, minWidth: 640, minHeight: 420,
+    title: 'المراحل الشاغلة', backgroundColor: '#0b1026',
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
+  });
+  liveWin.loadFile(path.join(__dirname, 'renderer', 'live-window.html'));
+  liveWin.on('closed', () => { liveWin = null; });
+  return true;
+});
+ipcMain.handle('live:pin', (e, on) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.setAlwaysOnTop(!!on); return !!on; });
+ipcMain.handle('live:full', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if (!w) return false; w.setFullScreen(!w.isFullScreen()); return w.isFullScreen(); });
+
+/* المحاضرات الجارية على هذا الحاسوب بنفس شكل /api/live في الهاتف */
+ipcMain.handle('live:local', () => {
+  const d = loadDb();
+  const now = new Date();
+  const toMin = (t) => { const [h, m] = String(t || '0:0').split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+  const fromMin = (n) => `${pad2(Math.floor(n / 60) % 24)}:${pad2(n % 60)}`;
+  const len = Number(d.settings.lectureMinutes) || 45;
+  const sessions = d.sessions.filter((s) => s.active).map((s) => {
+    const recs = d.attendance.filter((a) => a.sessionId === s.id);
+    const sched = d.schedule.find((x) => x.id === s.scheduleId);
+    return {
+      id: s.id, subject: s.subject, group: s.group || '', start: s.time, startTs: s.startTs,
+      end: sched && sched.endTime ? sched.endTime : fromMin(toMin(s.time) + len), teacher: s.createdByName || '',
+      present: recs.filter((a) => a.status === 'present').length, late: recs.filter((a) => a.status === 'late').length,
+      expected: d.students.filter((st) => !s.group || st.grade === s.group).length
+    };
+  });
+  const counts = {};
+  d.students.forEach((st) => { if (st.grade) counts[st.grade] = (counts[st.grade] || 0) + 1; });
+  return {
+    school: d.settings.schoolName, nowTs: now.getTime(), now: fromMin(now.getHours() * 60 + now.getMinutes()),
+    sessions, grades: Object.entries(counts).map(([name, count]) => ({ name, count }))
+  };
+});
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
@@ -230,6 +282,7 @@ function createWindow() {
     }
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  win.on('closed', () => { if (liveWin && !liveWin.isDestroyed()) liveWin.close(); });
 }
 
 if (!app.requestSingleInstanceLock()) {

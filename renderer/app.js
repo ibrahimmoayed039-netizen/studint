@@ -912,16 +912,43 @@ $('#loginForm').addEventListener('submit', async (e) => {
     $('#loginError').textContent = 'اسم المستخدم أو كلمة المرور غير صحيحة';
     return;
   }
-  currentUser = r.user;
+  finishLogin(r.user, 'تسجيل دخول');
+});
+function finishLogin(user, auditText) {
+  currentUser = user;
   $('#loginNotice').hidden = true;
-  audit('تسجيل دخول');
+  audit(auditText);
   $('#loginScreen').hidden = true;
   $('#mainNav').hidden = false;
   $('#mainArea').hidden = false;
   applyRoleNav();
   switchTab('scan');
   autoTick();
-});
+}
+
+/* الدخول ببطاقة المدرّس: القارئ يكتب الرقم بسرعة ثم Enter (الفاصل بين الأحرف أقل من 60ms، والإنسان أبطأ)،
+   فنلتقطه في أي مكان من شاشة الدخول ونمسح ما دخل في خانتي الاسم وكلمة المرور. */
+let lgBuf = '', lgLast = 0;
+document.addEventListener('keydown', async (e) => {
+  if ($('#loginScreen').hidden) return;
+  const t = performance.now();
+  if (e.key === 'Enter') {
+    const fast = t - lgLast < 60;
+    const uid = lgBuf; lgBuf = '';
+    if (uid.length >= 4 && fast) {
+      e.preventDefault(); e.stopPropagation();
+      $('#loginUser').value = ''; $('#loginPass').value = '';
+      const r = await api.loginCard(uid);
+      if (r.ok) return finishLogin(r.user, 'تسجيل دخول ببطاقة المدرّس');
+      $('#loginError').hidden = false;
+      $('#loginError').textContent = r.reason === 'admin' ? 'بطاقة المدير لا تُستخدم للدخول — ادخل بكلمة المرور' : 'هذه البطاقة غير مسجّلة لأي مستخدم';
+    }
+    return;
+  }
+  if (e.key.length !== 1 || e.ctrlKey || e.altKey || e.metaKey) return;
+  if (t - lgLast > 60) lgBuf = '';
+  lgBuf += e.key; lgLast = t;
+}, true);
 function doLogout(auto) {
   audit(auto ? 'تسجيل خروج تلقائي (انتهاء الحصة)' : 'تسجيل خروج');
   closeAuth(false);
