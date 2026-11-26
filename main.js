@@ -430,10 +430,43 @@ ipcMain.handle('lan:ping', async (_e, id) => {
 ipcMain.handle('lan:call', async (_e, { id, method, path: p, body }) => {
   const d = lanLoad().find((x) => x.id === id);
   if (!d) return { status: 0, error: 'الجهاز غير موجود' };
-  if (!/^\/api\/(schedule(\/(save|delete|replace))?|live|report)$/.test(String(p))) return { status: 0, error: 'مسار غير مسموح' };
+  if (!/^\/api\/(schedule(\/(save|delete|replace))?|users(\/(save|delete))?|live|report)$/.test(String(p))) return { status: 0, error: 'مسار غير مسموح' };
   return lanHttp(d.host, d.port, decTok(d.tok), method === 'POST' ? 'POST' : 'GET', p, body || null, p === '/api/report' ? 60000 : 8000);
 });
 ipcMain.handle('lan:scan', () => lanScan());
+
+/* إرسال مستخدمي الحاسوب إلى الهواتف: تُرسل التجزئة (salt/hash) الجاهزة فلا تنتقل كلمة المرور نفسها. المفتاح على الهاتف هو اسم المستخدم. */
+ipcMain.handle('lan:pushUsers', async (_e, { deviceIds, userIds }) => {
+  const d = loadDb();
+  const users = d.users.filter((u) => (userIds || []).includes(u.id));
+  const devs = lanLoad().filter((x) => (deviceIds || []).includes(x.id));
+  if (!users.length || !devs.length) return { ok: false, error: 'اختر مستخدماً وهاتفاً على الأقل' };
+  const results = [];
+  for (const dev of devs) {
+    for (const u of users) {
+      const r = await lanHttp(dev.host, dev.port, decTok(dev.tok), 'POST', '/api/users/save',
+        { user: { id: u.id, username: u.username, name: u.name, role: u.role, salt: u.salt, hash: u.hash, cardUid: u.cardUid || '' } }, 15000);
+      const ok = r.status === 200 && r.data && r.data.ok;
+      results.push({ device: dev.name, username: u.username, ok, created: ok && !!r.data.created,
+        error: ok ? '' : (r.error || (r.data && r.data.error) || ('رمز ' + r.status)) });
+      if (r.status === 0 || r.status === 401 || r.status === 429) {   // الجهاز غير متاح أو الرمز خاطئ: لا فائدة من تكرار المحاولة لبقية المستخدمين
+        for (const rest of users.slice(users.indexOf(u) + 1)) results.push({ device: dev.name, username: rest.username, ok: false, created: false, error: results[results.length - 1].error });
+        break;
+      }
+    }
+  }
+  return { ok: true, results };
+});
+
+/* إنشاء/تغيير كلمة مرور مستخدم مباشرة على الهاتف (يجزّئ الحاسوب كلمة المرور قبل الإرسال) */
+ipcMain.handle('lan:phoneUser', async (_e, { id, username, name, role, password, cardUid }) => {
+  const dev = lanLoad().find((x) => x.id === id);
+  if (!dev) return { status: 0, error: 'الجهاز غير موجود' };
+  const user = { username: String(username || '').trim(), name: String(name || '').trim(), role: role === 'admin' ? 'admin' : 'teacher' };
+  if (password) { const h = hashPassword(String(password)); user.salt = h.salt; user.hash = h.hash; }
+  if (cardUid !== undefined) user.cardUid = normCards(cardUid);
+  return lanHttp(dev.host, dev.port, decTok(dev.tok), 'POST', '/api/users/save', { user }, 15000);
+});
 
 ipcMain.handle('db:load', () => publicDb(loadDb()));
 // المستخدمون (وكلمات مرورهم وبطاقاتهم) تُدار فقط عبر users:* — لا نسمح للواجهة بالكتابة فوقها بنسخة قديمة

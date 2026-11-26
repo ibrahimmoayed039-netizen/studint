@@ -1055,14 +1055,19 @@ $('#userForm').addEventListener('submit', async (e) => {
     audit('إنشاء مستخدم', `@${username} (${role === 'admin' ? 'مدير' : 'مدرّس'})${cardUid ? ' — مع ' + cardsOf(cardUid).length + ' بطاقة' : ''}`);
     toast('تم إنشاء المستخدم');
   }
-  resetUserForm(); renderUsers();
+  const pushAfter = $('#usPushAfter').checked;
+  resetUserForm(); await renderUsers();
+  if (pushAfter) {
+    const saved = (await api.usersList()).find((x) => x.username.toLowerCase() === username.toLowerCase());
+    if (saved) pushUsersToPhones([saved.id], usSelected('.usDev'));
+  }
 });
 
 async function renderUsers() {
   const list = await api.usersList();
   $('#usersBody').innerHTML = list.length
     ? list.map((u, i) => `<tr>
-        <td>${i + 1}</td><td class="ltr">${esc(u.username)}</td><td>${esc(u.name)}${u.cardUid ? ' 💳' + (cardsOf(u.cardUid).length > 1 ? '×' + cardsOf(u.cardUid).length : '') : ''}</td>
+        <td><input type="checkbox" class="usSel" value="${esc(u.id)}" title="تحديد للإرسال إلى الهواتف"></td><td class="ltr">${esc(u.username)}</td><td>${esc(u.name)}${u.cardUid ? ' 💳' + (cardsOf(u.cardUid).length > 1 ? '×' + cardsOf(u.cardUid).length : '') : ''}</td>
         <td>${u.role === 'admin' ? 'مدير' : 'مدرّس'}</td>
         <td>
           <button class="btn sm" data-act="edit" data-id="${u.id}">تعديل</button>
@@ -1070,7 +1075,33 @@ async function renderUsers() {
         </td></tr>`).join('')
     : '<tr><td colspan="5" class="empty">لا يوجد مستخدمون</td></tr>';
   $('#usersBody').dataset.cache = JSON.stringify(list);
+  $('#usAll').checked = false;
+  fillUsDevices();
 }
+
+/* ---------- إرسال المستخدمين إلى الهواتف ---------- */
+async function fillUsDevices() {
+  const devs = await api.lanList();
+  $('#usDevices').innerHTML = devs.length
+    ? devs.map((d) => `<label class="check"><input type="checkbox" class="usDev" value="${esc(d.id)}" checked> ${esc(d.name)} <span dir="ltr">(${esc(d.host)})</span></label>`).join('')
+    : '<span class="hint">لا توجد هواتف مضافة — أضفها من تبويب «الأجهزة».</span>';
+}
+$('#usAll').addEventListener('change', (e) => document.querySelectorAll('.usSel').forEach((c) => { c.checked = e.target.checked; }));
+
+async function pushUsersToPhones(userIds, deviceIds) {
+  if (!userIds.length) return toast('حدّد مستخدماً واحداً على الأقل');
+  if (!deviceIds.length) return toast('حدّد هاتفاً واحداً على الأقل');
+  const out = $('#usPushOut'); out.textContent = '⏳ جارٍ الإرسال...';
+  const r = await api.lanPushUsers({ userIds, deviceIds });
+  if (!r.ok) { out.textContent = r.error || 'فشل الإرسال'; return toast(r.error || 'فشل الإرسال'); }
+  const okN = r.results.filter((x) => x.ok).length;
+  out.innerHTML = `<b>تم ${okN} من ${r.results.length}</b><br>` + r.results.map((x) =>
+    `${x.ok ? '✅' : '❌'} ${esc(x.device)} — <span dir="ltr">@${esc(x.username)}</span> ${x.ok ? (x.created ? '(أُنشئ)' : '(حُدِّث)') : '— ' + esc(x.error)}`).join('<br>');
+  r.results.filter((x) => x.ok).forEach((x) => audit(x.created ? 'إنشاء مستخدم في هاتف' : 'تحديث مستخدم في هاتف', `${x.device} — @${x.username}`));
+  toast(okN === r.results.length ? 'تم الإرسال إلى الهواتف' : 'اكتمل الإرسال مع أخطاء — انظر التفاصيل');
+}
+const usSelected = (cls) => [...document.querySelectorAll(cls + ':checked')].map((c) => c.value);
+$('#usPush').addEventListener('click', () => pushUsersToPhones(usSelected('.usSel'), usSelected('.usDev')));
 $('#usersBody').addEventListener('click', async (e) => {
   const b = e.target.closest('button'); if (!b) return;
   const list = JSON.parse($('#usersBody').dataset.cache || '[]');

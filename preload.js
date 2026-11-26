@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('api', {
   lanPing: (id) => ipcRenderer.invoke('lan:ping', id),
   lanCall: (d) => ipcRenderer.invoke('lan:call', d),
   lanScan: () => ipcRenderer.invoke('lan:scan'),
+  lanPushUsers: (d) => ipcRenderer.invoke('lan:pushUsers', d),
+  lanPhoneUser: (d) => ipcRenderer.invoke('lan:phoneUser', d),
   liveOpen: () => ipcRenderer.invoke('live:open'),
   liveLocal: () => ipcRenderer.invoke('live:local'),
   livePin: (on) => ipcRenderer.invoke('live:pin', on),

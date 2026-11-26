@@ -217,6 +217,19 @@
           <button class="btn" id="dvCopyCancel">إلغاء</button>
         </div>
       </div>
+      <div class="card" style="max-width:none">
+        <h3>👥 مستخدمو هذا الهاتف</h3>
+        <table><thead><tr><th>اسم المستخدم</th><th>الاسم</th><th>الدور</th><th>بطاقات</th><th>إجراءات</th></tr></thead>
+        <tbody id="dvUsers"></tbody></table>
+        <form id="dvUserForm" class="row2" style="align-items:end">
+          <label>اسم المستخدم<input id="dvuUsername" dir="ltr" required autocomplete="off"></label>
+          <label>الاسم الظاهر<input id="dvuName" autocomplete="off"></label>
+          <label>الدور<select id="dvuRole"><option value="teacher">مدرّس</option><option value="admin">مدير</option></select></label>
+          <label>كلمة المرور<input id="dvuPass" type="password" autocomplete="new-password" placeholder="فارغ = بلا تغيير للموجود"></label>
+          <button class="btn primary" type="submit">➕ إنشاء / تحديث في الهاتف</button>
+        </form>
+        <p class="hint">إن كان اسم المستخدم موجوداً في الهاتف يُحدَّث اسمه ودوره (وكلمة مروره إن كتبتها)، وإلا يُنشأ مستخدم جديد وتكون كلمة المرور مطلوبة.</p>
+      </div>
       <form id="dvForm" class="card" style="max-width:none">
         <input type="hidden" id="dvId">
         <div class="row2">
@@ -345,8 +358,19 @@
         <button class="btn" type="button" id="usCancel">إلغاء / جديد</button>
       </div>
     </form>
-    <table><thead><tr><th>#</th><th>اسم المستخدم</th><th>الاسم</th><th>الدور</th><th>إجراءات</th></tr></thead>
+    <table><thead><tr><th><input type="checkbox" id="usAll" title="تحديد الكل"></th><th>اسم المستخدم</th><th>الاسم</th><th>الدور</th><th>إجراءات</th></tr></thead>
     <tbody id="usersBody"></tbody></table>
+
+    <div class="card" style="max-width:none">
+      <h3>📲 إرسال المستخدمين المحدّدين إلى هواتف الأندرويد</h3>
+      <p class="hint">يُنشأ المستخدم في الهاتف (أو يُحدَّث إن كان اسم المستخدم موجوداً) بنفس كلمة المرور والبطاقات المسجّلة هنا. تنتقل التجزئة فقط لا كلمة المرور نفسها. أضف الهواتف أولاً من تبويب «الأجهزة».</p>
+      <div id="usDevices" class="row" style="flex-wrap:wrap"></div>
+      <div class="row">
+        <button class="btn primary" id="usPush">📲 إرسال المحدّدين</button>
+        <label class="check"><input type="checkbox" id="usPushAfter"> إرسال المستخدم تلقائياً بعد حفظه في النموذج أعلاه</label>
+      </div>
+      <div id="usPushOut" class="hint"></div>
+    </div>
   </section>
 
   <!-- سجل التدقيق -->

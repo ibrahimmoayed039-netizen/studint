@@ -121,7 +121,7 @@ async function openDevice(id, keepOwner) {
   $('#dvOwner').innerHTML = dvData.users.map((u) => `<option value="${esc(u.id)}">${esc(u.name)} (${u.role === 'admin' ? 'مدير' : 'مدرّس'})</option>`).join('');
   if (keepOwner && dvData.users.some((u) => u.id === keepOwner)) $('#dvOwner').value = keepOwner;
   $('#dvEditor').hidden = false; $('#dvCopyBox').hidden = true;
-  resetDvForm(); drawItems(); fillDvSuggestions();
+  resetDvForm(); drawItems(); fillDvSuggestions(); loadPhoneUsers();
   $('#dvEditor').scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -221,4 +221,43 @@ $('#tokOk').addEventListener('click', async () => {
   const r = await api.lanSetToken({ id: tokDevice, token: $('#tokInput').value.trim() });
   if (!r.ok) return toast(r.error);
   tokClose(); toast('تم حفظ الرمز');
+});
+
+
+/* ---------- مستخدمو الهاتف (إنشاء/تحديث/حذف من الحاسوب) ---------- */
+let dvPhoneUsers = [];
+async function loadPhoneUsers() {
+  $('#dvUsers').innerHTML = '<tr><td colspan="5">…</td></tr>';
+  const r = await dvCall(dvCur, 'GET', '/api/users');
+  if (r.status === 404) { $('#dvUsers').innerHTML = '<tr><td colspan="5">إدارة المستخدمين تحتاج نسخة الأندرويد v18 أو أحدث على هذا الهاتف.</td></tr>'; return; }
+  if (r.status !== 200 || !r.data || !r.data.ok) { $('#dvUsers').innerHTML = `<tr><td colspan="5">${esc(dvErr(r))}</td></tr>`; return; }
+  dvPhoneUsers = r.data.users;
+  $('#dvUsers').innerHTML = dvPhoneUsers.map((u) => `<tr>
+    <td dir="ltr">${esc(u.username)}</td><td>${esc(u.name)}</td><td>${u.role === 'admin' ? 'مدير' : 'مدرّس'}</td>
+    <td>${u.cardUid ? '💳×' + u.cardUid.split(',').filter(Boolean).length : '—'}</td>
+    <td><button class="btn sm" data-act="uedit" data-id="${esc(u.id)}">تعديل</button>
+        <button class="btn sm danger" data-act="udel" data-id="${esc(u.id)}">حذف</button></td></tr>`).join('');
+}
+$('#dvUsers').addEventListener('click', async (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  const u = dvPhoneUsers.find((x) => x.id === b.dataset.id); if (!u) return;
+  if (b.dataset.act === 'uedit') {
+    $('#dvuUsername').value = u.username; $('#dvuName').value = u.name; $('#dvuRole').value = u.role; $('#dvuPass').value = '';
+    $('#dvuPass').focus();
+  } else if (confirm(`حذف المستخدم «${u.name}» من الهاتف؟`)) {
+    const r = await dvCall(dvCur, 'POST', '/api/users/delete', { id: u.id });
+    if (r.status !== 200) return dvAlert(dvErr(r));
+    audit('حذف مستخدم من هاتف', `${devName()} — @${u.username}`);
+    toast('تم الحذف'); loadPhoneUsers();
+  }
+});
+$('#dvUserForm').addEventListener('submit', async (e) => {
+  e.preventDefault(); dvClearMsg();
+  const username = $('#dvuUsername').value.trim();
+  const exists = dvPhoneUsers.some((u) => u.username.toLowerCase() === username.toLowerCase());
+  if (!exists && !$('#dvuPass').value) return toast('كلمة المرور مطلوبة للمستخدم الجديد');
+  const r = await api.lanPhoneUser({ id: dvCur, username, name: $('#dvuName').value, role: $('#dvuRole').value, password: $('#dvuPass').value });
+  if (r.status !== 200 || !r.data || !r.data.ok) return dvAlert(dvErr(r));
+  audit(r.data.created ? 'إنشاء مستخدم في هاتف' : 'تحديث مستخدم في هاتف', `${devName()} — @${username}`);
+  $('#dvUserForm').reset(); toast(r.data.created ? 'أُنشئ المستخدم في الهاتف' : 'تم تحديث المستخدم'); loadPhoneUsers();
 });
