@@ -362,6 +362,16 @@
     <tbody id="usersBody"></tbody></table>
 
     <div class="card" style="max-width:none">
+      <h3>🏫 إنشاء مستخدمي مراحل (دور مدرّس) دفعة واحدة</h3>
+      <p class="hint">اكتب كل مرحلة في سطر. الصيغة: <b dir="ltr">المرحلة : اسم المستخدم : كلمة المرور</b> — اسم المستخدم وكلمة المرور اختياريان؛ إن تُرك اسم المستخدم يُستعمل اسم المرحلة (فراغاته تصير _)، وإن تُركت كلمة المرور تُستعمل الموحّدة أدناه. مثال: <span dir="ltr">الأول متوسط : first1 : 1234</span></p>
+      <textarea id="stList" rows="5" style="width:100%;padding:10px;border-radius:12px;background:#ffffff10;color:inherit;border:1px solid #ffffff33;font:inherit" placeholder="الأول متوسط&#10;الثاني متوسط : second : 2468&#10;الثالث متوسط"></textarea>
+      <label>كلمة المرور الموحّدة (للأسطر التي بلا كلمة مرور)<input id="stPass" type="text" dir="ltr" autocomplete="off"></label>
+      <label class="check"><input type="checkbox" id="stPush" checked> إرسالهم مباشرة إلى الهواتف المحدّدة في البطاقة التالية بعد الإنشاء</label>
+      <div class="row"><button class="btn primary" id="stGo">➕ إنشاء المستخدمين</button></div>
+      <div id="stOut" class="hint"></div>
+    </div>
+
+    <div class="card" style="max-width:none">
       <h3>📲 إرسال المستخدمين المحدّدين إلى هواتف الأندرويد</h3>
       <p class="hint">يُنشأ المستخدم في الهاتف (أو يُحدَّث إن كان اسم المستخدم موجوداً) بنفس كلمة المرور والبطاقات المسجّلة هنا. تنتقل التجزئة فقط لا كلمة المرور نفسها. أضف الهواتف أولاً من تبويب «الأجهزة».</p>
       <div id="usDevices" class="row" style="flex-wrap:wrap"></div>

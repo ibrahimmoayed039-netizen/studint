@@ -1100,6 +1100,38 @@ async function pushUsersToPhones(userIds, deviceIds) {
   r.results.filter((x) => x.ok).forEach((x) => audit(x.created ? 'إنشاء مستخدم في هاتف' : 'تحديث مستخدم في هاتف', `${x.device} — @${x.username}`));
   toast(okN === r.results.length ? 'تم الإرسال إلى الهواتف' : 'اكتمل الإرسال مع أخطاء — انظر التفاصيل');
 }
+/* ---------- إنشاء مستخدمي مراحل دفعة واحدة ---------- */
+$('#stGo').addEventListener('click', async () => {
+  const out = $('#stOut');
+  const lines = $('#stList').value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return toast('اكتب مرحلة واحدة على الأقل');
+  const common = $('#stPass').value;
+  const existing = (await api.usersList()).map((u) => u.username.toLowerCase());
+  const msgs = []; const createdNames = [];
+  for (const line of lines) {
+    const [stage, un, pw] = line.split(/\s*[:：]\s*/);
+    const name = (stage || '').trim();
+    const username = (un || '').trim() || name.replace(/\s+/g, '_');
+    const password = (pw || '').trim() || common;
+    if (!name) continue;
+    if (!password) { msgs.push(`❌ ${esc(name)} — لا توجد كلمة مرور (اكتب كلمة المرور الموحّدة)`); continue; }
+    if (existing.includes(username.toLowerCase())) { msgs.push(`⚠️ ${esc(name)} — اسم المستخدم «${esc(username)}» موجود مسبقاً (تخطّي)`); continue; }
+    const r = await api.userCreate({ username, password, name, role: 'teacher', cardUid: '' });
+    if (!r.ok) { msgs.push(`❌ ${esc(name)} — ${r.error === 'exists' ? 'اسم المستخدم موجود' : 'تعذّر الإنشاء'}`); continue; }
+    existing.push(username.toLowerCase()); createdNames.push(username);
+    audit('إنشاء مستخدم', `@${username} (مدرّس) — مرحلة: ${name}`);
+    msgs.push(`✅ ${esc(name)} — <span dir="ltr">@${esc(username)}</span>`);
+  }
+  out.innerHTML = msgs.join('<br>');
+  await renderUsers();
+  if (createdNames.length && $('#stPush').checked) {
+    const ids = (await api.usersList()).filter((u) => createdNames.includes(u.username)).map((u) => u.id);
+    const devs = usSelected('.usDev');
+    if (!devs.length) toast('تم الإنشاء. لم تُحدَّد هواتف للإرسال — حدّدها ثم اضغط «إرسال المحدّدين»');
+    else { await pushUsersToPhones(ids, devs); out.innerHTML = msgs.join('<br>') + '<hr>' + $('#usPushOut').innerHTML; }
+  } else if (createdNames.length) toast(`تم إنشاء ${createdNames.length} مستخدم`);
+});
+
 const usSelected = (cls) => [...document.querySelectorAll(cls + ':checked')].map((c) => c.value);
 $('#usPush').addEventListener('click', () => pushUsersToPhones(usSelected('.usSel'), usSelected('.usDev')));
 $('#usersBody').addEventListener('click', async (e) => {
