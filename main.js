@@ -21,6 +21,12 @@ function hashPassword(password, salt) {
   const hash = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256').toString('hex');
   return { salt, hash };
 }
+/** تجزئة متوافقة مع الأندرويد: الملح يُفكّ من hex إلى بايتات (الحاسوب يستعمل نص الملح نفسه، فتختلف النتيجة). */
+function hashPasswordPhone(password) {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256').toString('hex');
+  return { salt: salt.toString('hex'), hash };
+}
 function verifyPassword(password, salt, hash) {
   const { hash: h2 } = hashPassword(password, salt);
   return crypto.timingSafeEqual(Buffer.from(h2, 'hex'), Buffer.from(hash, 'hex'));
@@ -464,7 +470,7 @@ ipcMain.handle('lan:phoneUser', async (_e, { id, username, name, role, password,
   const dev = lanLoad().find((x) => x.id === id);
   if (!dev) return { status: 0, error: 'الجهاز غير موجود' };
   const user = { username: String(username || '').trim(), name: String(name || '').trim(), role: role === 'admin' ? 'admin' : 'teacher' };
-  if (password) { const h = hashPassword(String(password)); user.salt = h.salt; user.hash = h.hash; }
+  if (password) { const h = hashPasswordPhone(String(password)); user.salt = h.salt; user.hash = h.hash; }
   if (cardUid !== undefined) user.cardUid = normCards(cardUid);
   if (force) user.force = true;
   return lanHttp(dev.host, dev.port, decTok(dev.tok), 'POST', '/api/users/save', { user }, 15000);

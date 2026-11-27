@@ -370,3 +370,14 @@ h1,h2,h3,b,.k-subject,.k-name,.p-name,.stat b{text-shadow:none!important}
 .btn:not(.primary):not(.danger){background:#2b3580!important;color:#fff!important}
 .btn.primary{background:#5563e8!important}
 .btn.danger{background:#a82c4a!important;color:#fff!important}
+
+/* ===== إلغاء تأثيرات التقلّب/الميلان ثلاثي الأبعاد ===== */
+main,.login-overlay,.picker{perspective:none!important}
+.card,.scan-box,.stat,.login-card,.p-card,.schedule-item,.man-item,table,.panel{
+  transform:none!important;transform-style:flat!important}
+.card.tilting,.stat.tilting{transform:none!important}
+.stat:hover,.schedule-item:hover,.man-item:hover,.card:hover{transform:none!important}
+@keyframes panelIn{from{opacity:0}to{opacity:1}}
+@keyframes loginIn{from{opacity:0}to{opacity:1}}
+@keyframes pop{from{opacity:.2}to{opacity:1}}
+@keyframes tickIn{from{opacity:.3}to{opacity:1}}
