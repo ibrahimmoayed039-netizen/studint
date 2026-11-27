@@ -1,9 +1,9 @@
 /* ============ حضور الطلبة — تصميم مجسّم احترافي ============ */
 :root{
-  --bg1:#0b1026;--bg2:#141b3d;
+  --bg1:#0d1330;--bg2:#0d1330;
   --pri:#6d7cff;--pri2:#9a6bff;--pri-d:#4a57d6;
   --ok:#19c37d;--warn:#f5a524;--bad:#f0446b;--info:#4da3ff;
-  --txt:#e9ecff;--mut:#9aa3c7;
+  --txt:#ffffff;--mut:#c9d0f2;
   --glass:rgba(255,255,255,.07);--glass2:rgba(255,255,255,.11);
   --bd:rgba(255,255,255,.14);--bd2:rgba(255,255,255,.22);
   --sh-lg:0 30px 60px -20px rgba(0,0,0,.65),0 12px 24px -12px rgba(0,0,0,.5);
@@ -335,3 +335,38 @@ input[type=checkbox]{width:22px;height:22px;padding:0;flex:none;accent-color:var
 .lv-recent{font-size:12px;color:var(--mut)}
 .lv-next{font-size:13px;color:var(--mut)}
 #live:fullscreen{overflow:auto;padding:24px;background:linear-gradient(160deg,var(--bg1),var(--bg2))}
+
+
+/* ============ تحسين الوضوح (خلفية هادئة وصلبة + نص أوضح) ============ */
+body{background:#0d1330!important;background-attachment:scroll}
+#scene{display:none!important}
+header{background:#27308a!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+nav{background:#151c45!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+.card,.scan-box,.session-bar,.stat,table,.lv-card,.schedule-item,.man-item,.k-stat,.p-card{
+  background:#18204d!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;border-color:rgba(255,255,255,.2)}
+.session-bar{background:#27308a!important}
+th{background:#2b3580!important;color:#fff!important}
+tbody tr:hover{background:#222b63!important}
+.tab{color:#dfe4ff}
+.tab.active{color:#fff}
+label,.hint,.empty,.lv-nums,.lv-recent,.lv-next,.lv-inl,.schedule-item span,.man-item span,.stat span,.k-meta,.k-school,.k-late,.k-recent,.k-stat span,.p-title,.p-sub{color:#d3d9f7!important}
+input,select{background:#0b1030!important;color:#fff!important;border-color:rgba(255,255,255,.3)!important}
+input::placeholder{color:#9aa5d6!important}
+h1,h2,h3,b,.k-subject,.k-name,.p-name,.stat b{text-shadow:none!important}
+#clock{text-shadow:none!important;background:#0b1030!important}
+.login-overlay,.kiosk,#live:fullscreen{background:#0d1330!important}
+.result.idle{background:#18204d!important;color:#d3d9f7!important}
+.result.ok{background:#12805a!important;color:#fff!important}
+.result.late{background:#9a6410!important;color:#fff!important}
+.result.dup{background:#2a62a8!important;color:#fff!important}
+.result.bad{background:#a82c4a!important;color:#fff!important}
+.badge.present{background:#12805a!important;color:#fff!important}
+.badge.late{background:#9a6410!important;color:#fff!important}
+.badge.bad{background:#a82c4a!important;color:#fff!important}
+.badge.manual{background:#2a62a8!important;color:#fff!important}
+.lv-pill.busy{background:#a82c4a!important;color:#fff!important}
+.lv-pill.free{background:#12805a!important;color:#fff!important}
+.lv-pill.off{color:#d3d9f7!important}
+.btn:not(.primary):not(.danger){background:#2b3580!important;color:#fff!important}
+.btn.primary{background:#5563e8!important}
+.btn.danger{background:#a82c4a!important;color:#fff!important}

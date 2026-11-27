@@ -459,12 +459,13 @@ ipcMain.handle('lan:pushUsers', async (_e, { deviceIds, userIds }) => {
 });
 
 /* إنشاء/تغيير كلمة مرور مستخدم مباشرة على الهاتف (يجزّئ الحاسوب كلمة المرور قبل الإرسال) */
-ipcMain.handle('lan:phoneUser', async (_e, { id, username, name, role, password, cardUid }) => {
+ipcMain.handle('lan:phoneUser', async (_e, { id, username, name, role, password, cardUid, force }) => {
   const dev = lanLoad().find((x) => x.id === id);
   if (!dev) return { status: 0, error: 'الجهاز غير موجود' };
   const user = { username: String(username || '').trim(), name: String(name || '').trim(), role: role === 'admin' ? 'admin' : 'teacher' };
   if (password) { const h = hashPassword(String(password)); user.salt = h.salt; user.hash = h.hash; }
   if (cardUid !== undefined) user.cardUid = normCards(cardUid);
+  if (force) user.force = true;
   return lanHttp(dev.host, dev.port, decTok(dev.tok), 'POST', '/api/users/save', { user }, 15000);
 });
 

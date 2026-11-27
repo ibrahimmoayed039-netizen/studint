@@ -226,6 +226,8 @@ $('#tokOk').addEventListener('click', async () => {
 
 /* ---------- مستخدمو الهاتف (إنشاء/تحديث/حذف من الحاسوب) ---------- */
 let dvPhoneUsers = [];
+let pwTarget = null;
+const lastAdminErr = (r) => JSON.stringify(r).includes('آخر مدير');
 async function loadPhoneUsers() {
   $('#dvUsers').innerHTML = '<tr><td colspan="5">…</td></tr>';
   const r = await dvCall(dvCur, 'GET', '/api/users');
@@ -235,17 +237,24 @@ async function loadPhoneUsers() {
   $('#dvUsers').innerHTML = dvPhoneUsers.map((u) => `<tr>
     <td dir="ltr">${esc(u.username)}</td><td>${esc(u.name)}</td><td>${u.role === 'admin' ? 'مدير' : 'مدرّس'}</td>
     <td>${u.cardUid ? '💳×' + u.cardUid.split(',').filter(Boolean).length : '—'}</td>
-    <td><button class="btn sm" data-act="uedit" data-id="${esc(u.id)}">تعديل</button>
+    <td><button class="btn sm" data-act="upw" data-id="${esc(u.id)}">🔑 كلمة المرور</button>
+        <button class="btn sm" data-act="uedit" data-id="${esc(u.id)}">تعديل</button>
         <button class="btn sm danger" data-act="udel" data-id="${esc(u.id)}">حذف</button></td></tr>`).join('');
 }
 $('#dvUsers').addEventListener('click', async (e) => {
   const b = e.target.closest('button'); if (!b) return;
   const u = dvPhoneUsers.find((x) => x.id === b.dataset.id); if (!u) return;
-  if (b.dataset.act === 'uedit') {
+  if (b.dataset.act === 'upw') {
+    pwTarget = u; $('#dvPwTitle').textContent = `🔑 كلمة مرور «${u.name}» (@${u.username})`;
+    $('#dvPw1').value = ''; $('#dvPw2').value = ''; $('#dvPwErr').textContent = '';
+    $('#dvPwDlg').showModal(); $('#dvPw1').focus();
+  } else if (b.dataset.act === 'uedit') {
     $('#dvuUsername').value = u.username; $('#dvuName').value = u.name; $('#dvuRole').value = u.role; $('#dvuPass').value = '';
     $('#dvuPass').focus();
   } else if (confirm(`حذف المستخدم «${u.name}» من الهاتف؟`)) {
-    const r = await dvCall(dvCur, 'POST', '/api/users/delete', { id: u.id });
+    let r = await dvCall(dvCur, 'POST', '/api/users/delete', { id: u.id });
+    if (r.status === 409 && lastAdminErr(r) && confirm('هذا آخر مدير في الهاتف. إن حذفته فلن يوجد مدير على الهاتف إلى أن ترسل مديراً من الحاسوب.\nهل تريد الحذف فعلاً؟'))
+      r = await dvCall(dvCur, 'POST', '/api/users/delete', { id: u.id, force: true });
     if (r.status !== 200) return dvAlert(dvErr(r));
     audit('حذف مستخدم من هاتف', `${devName()} — @${u.username}`);
     toast('تم الحذف'); loadPhoneUsers();
@@ -256,8 +265,24 @@ $('#dvUserForm').addEventListener('submit', async (e) => {
   const username = $('#dvuUsername').value.trim();
   const exists = dvPhoneUsers.some((u) => u.username.toLowerCase() === username.toLowerCase());
   if (!exists && !$('#dvuPass').value) return toast('كلمة المرور مطلوبة للمستخدم الجديد');
-  const r = await api.lanPhoneUser({ id: dvCur, username, name: $('#dvuName').value, role: $('#dvuRole').value, password: $('#dvuPass').value });
+  const body = { id: dvCur, username, name: $('#dvuName').value, role: $('#dvuRole').value, password: $('#dvuPass').value };
+  let r = await api.lanPhoneUser(body);
+  if (r.status === 409 && lastAdminErr(r) && confirm('هذا آخر مدير في الهاتف. بعد تحويله إلى مدرّس لن يوجد مدير على الهاتف إلى أن ترسل مديراً من الحاسوب (إنشاء مستخدم بدور «مدير»).\nهل تريد تغيير الصلاحية فعلاً؟'))
+    r = await api.lanPhoneUser({ ...body, force: true });
   if (r.status !== 200 || !r.data || !r.data.ok) return dvAlert(dvErr(r));
   audit(r.data.created ? 'إنشاء مستخدم في هاتف' : 'تحديث مستخدم في هاتف', `${devName()} — @${username}`);
   $('#dvUserForm').reset(); toast(r.data.created ? 'أُنشئ المستخدم في الهاتف' : 'تم تحديث المستخدم'); loadPhoneUsers();
+});
+
+$('#dvPwCancel').addEventListener('click', () => $('#dvPwDlg').close());
+$('#dvPwOk').addEventListener('click', async () => {
+  const p1 = $('#dvPw1').value, p2 = $('#dvPw2').value;
+  if (!p1) return ($('#dvPwErr').textContent = 'اكتب كلمة المرور الجديدة');
+  if (p1 !== p2) return ($('#dvPwErr').textContent = 'كلمتا المرور غير متطابقتين');
+  const u = pwTarget; if (!u) return;
+  const r = await api.lanPhoneUser({ id: dvCur, username: u.username, name: u.name, role: u.role, password: p1 });
+  if (r.status !== 200 || !r.data || !r.data.ok) return ($('#dvPwErr').textContent = dvErr(r));
+  $('#dvPwDlg').close();
+  audit('تغيير كلمة مرور مستخدم في هاتف', `${devName()} — @${u.username}`);
+  toast('تم تغيير كلمة المرور على الهاتف');
 });

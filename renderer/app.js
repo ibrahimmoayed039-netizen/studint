@@ -20,8 +20,16 @@ const cardsOf = (s) => [...new Set(String(s || '').split(/[,;،\s]+/).map((x) =>
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const persist = () => api.save(db);
 /* ---------- سجل التدقيق ---------- */
+const AUDIT_KEEP_DAYS = 3;   // يُحذف سجل التدقيق تلقائياً بعد 3 أيام
+function purgeOldAudit() {
+  const cutoff = Date.now() - AUDIT_KEEP_DAYS * 86400000;
+  const n = (db.audit || []).length;
+  db.audit = (db.audit || []).filter((e) => e.ts >= cutoff);
+  return n - db.audit.length;
+}
 function audit(action, detail) {
   db.audit = db.audit || [];
+  purgeOldAudit();
   db.audit.push({ id: uid(), ts: Date.now(), userId: currentUser ? currentUser.id : '', userName: currentUser ? currentUser.name : 'النظام', action, detail: detail || '' });
   if (db.audit.length > 5000) db.audit.splice(0, db.audit.length - 5000);
   persist();
@@ -792,12 +800,11 @@ $('#auExport').addEventListener('click', () => {
   csvDownload('audit-log.csv', [['الوقت', 'المستخدم', 'الإجراء', 'التفاصيل'], ...auditRows().map((e) => [fmtTs(e.ts), e.userName, e.action, e.detail])]);
 });
 $('#auPurge').addEventListener('click', () => {
-  if (!confirm('حذف سجلات التدقيق الأقدم من 90 يوماً؟')) return;
-  const cutoff = Date.now() - 90 * 86400000;
-  const before = db.audit.length;
-  db.audit = db.audit.filter((e) => e.ts >= cutoff);
-  audit('حذف سجلات التدقيق القديمة', `${before - db.audit.length} سجل (أقدم من 90 يوماً)`);
-  renderAudit(); toast('تم الحذف');
+  const n = (db.audit || []).length;
+  if (!n || !confirm(`حذف كل سجلات التدقيق (${n} سجل)؟ لا يمكن التراجع.`)) return;
+  db.audit = [];
+  audit('حذف كل سجلات التدقيق', `${n} سجل`);
+  renderAudit(); toast('تم حذف السجل');
 });
 
 /* ---------- تقارير PDF / Excel ---------- */
@@ -1154,6 +1161,7 @@ $('#usersBody').addEventListener('click', async (e) => {
 
 (async function init() {
   db = await api.load();
+  if (purgeOldAudit()) persist();
   // إغلاق أي محاضرة نسيها المستخدم مفتوحة من يوم سابق
   db.sessions.forEach((s) => { if (s.active && s.date !== todayStr()) { s.active = false; s.endTime = '—'; } });
   persist();

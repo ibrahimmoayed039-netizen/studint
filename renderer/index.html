@@ -217,6 +217,15 @@
           <button class="btn" id="dvCopyCancel">إلغاء</button>
         </div>
       </div>
+      <dialog id="dvPwDlg" style="border:1px solid #ffffff44;border-radius:18px;background:#1a2150;color:#fff;padding:22px;min-width:320px">
+        <form method="dialog" id="dvPwForm" style="display:flex;flex-direction:column;gap:10px">
+          <h3 id="dvPwTitle" style="margin:0">🔑 تغيير كلمة المرور</h3>
+          <label>كلمة المرور الجديدة<input id="dvPw1" type="password" autocomplete="new-password" dir="ltr"></label>
+          <label>تأكيد كلمة المرور<input id="dvPw2" type="password" autocomplete="new-password" dir="ltr"></label>
+          <div id="dvPwErr" class="hint" style="color:#f0446b"></div>
+          <div class="row"><button class="btn primary" id="dvPwOk" type="button">حفظ في الهاتف</button><button class="btn" id="dvPwCancel" type="button">إلغاء</button></div>
+        </form>
+      </dialog>
       <div class="card" style="max-width:none">
         <h3>👥 مستخدمو هذا الهاتف</h3>
         <table><thead><tr><th>اسم المستخدم</th><th>الاسم</th><th>الدور</th><th>بطاقات</th><th>إجراءات</th></tr></thead>
@@ -390,7 +399,7 @@
       <label>من تاريخ <input type="date" id="auDate"></label>
       <input id="auSearch" class="search" placeholder="🔍 بحث في الإجراء أو التفاصيل">
       <button class="btn" id="auExport">تصدير CSV</button>
-      <button class="btn danger" id="auPurge">🗑 حذف الأقدم من 90 يوماً</button>
+      <button class="btn danger" id="auPurge">🗑 حذف كل السجل (يُحذف تلقائياً بعد 3 أيام)</button>
     </div>
     <p class="hint">يسجّل من أضاف أو عدّل أو حذف ماذا ومتى (الطلاب، الحضور، الجدول، المستخدمين، الإعدادات، النسخ الاحتياطي). يُعرض أحدث 500 سجل.</p>
     <table><thead><tr><th>#</th><th>الوقت</th><th>المستخدم</th><th>الإجراء</th><th>التفاصيل</th></tr></thead>
