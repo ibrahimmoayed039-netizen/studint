@@ -34,7 +34,7 @@
 <nav id="mainNav" hidden>
   <button class="tab active" data-tab="scan" data-roles="admin,teacher">📇 تسجيل الحضور</button>
   <button class="tab" data-tab="schedule" data-roles="admin,teacher">🗓️ الجدول الأسبوعي</button>
-  <button class="tab" data-tab="students" data-roles="admin">👨‍🎓 الطلاب</button>
+  <button class="tab" data-tab="students" data-roles="admin,teacher">👨‍🎓 الطلاب</button>
   <button class="tab" data-tab="log" data-roles="admin,teacher">📋 سجل الحضور</button>
   <button class="tab" data-tab="reports" data-roles="admin,teacher">📊 التقارير والغياب</button>
   <button class="tab" data-tab="users" data-roles="admin">🔑 المستخدمون</button>
@@ -264,6 +264,22 @@
           <button class="btn" type="button" id="dvReset">إلغاء / جديد</button>
         </div>
       </form>
+      <div class="toolbar" id="dvSortBar">
+        <label>🗓 عرض يوم
+          <select id="dvFilterDay"><option value="all">كل الأيام</option>
+            <option value="0">الأحد</option><option value="1">الاثنين</option><option value="2">الثلاثاء</option><option value="3">الأربعاء</option><option value="4">الخميس</option><option value="5">الجمعة</option><option value="6">السبت</option>
+          </select>
+        </label>
+        <label>↕️ ترتيب حسب
+          <select id="dvSortBy">
+            <option value="day">اليوم ثم الوقت</option>
+            <option value="time">الوقت فقط</option>
+            <option value="subject">المادة</option>
+            <option value="group">المجموعة</option>
+          </select>
+        </label>
+        <span class="hint" id="dvCount"></span>
+      </div>
       <table><thead><tr><th>#</th><th>اليوم</th><th>المادة</th><th>المجموعة</th><th>الوقت</th><th>السماح</th><th>تلقائي</th><th>إجراءات</th></tr></thead>
       <tbody id="dvItems"></tbody></table>
     </div>
@@ -294,9 +310,31 @@
         <button class="btn" type="button" id="stCancel">إلغاء / جديد</button>
       </div>
     </form>
+    <div class="card" id="stSendBox" style="max-width:none" hidden>
+      <h3>📲 إرسال الطلاب وبطاقاتهم إلى مرحلة في الهواتف</h3>
+      <div class="row2">
+        <label>الطلاب المراد إرسالهم
+          <select id="stSendGrade"></select>
+        </label>
+        <label>اسم المرحلة في الهاتف (اختياري — فارغ = تبقى مرحلة كل طالب كما هي)
+          <input id="stSendAs" list="stSendAsList" autocomplete="off" placeholder="مثال: الصف الأول">
+          <datalist id="stSendAsList"></datalist>
+        </label>
+      </div>
+      <div class="hint">اختر الهاتف/الهواتف المستلمة:</div>
+      <div id="stSendDevices" class="row"></div>
+      <div class="row">
+        <button class="btn primary" id="stSendGo">📲 إرسال إلى الهواتف المحدّدة</button>
+        <span class="hint" id="stSendCount"></span>
+      </div>
+      <div id="stSendOut" class="hint"></div>
+      <p class="hint">يُضاف الطالب الجديد ويُحدَّث الموجود (بالبطاقة أولاً ثم الاسم والمرحلة) ولا يُحذف أي طالب في الهاتف. تُتخطّى بطاقة مسجّلة لمدرّس. يتطلب نسخة الأندرويد الأحدث.</p>
+    </div>
     <div class="toolbar">
       <input id="stSearch" class="search" placeholder="🔍 بحث بالاسم أو الصف أو رقم البطاقة">
       <button class="btn" id="stImportBtn">📥 استيراد من Excel</button>
+      <button class="btn" id="stExportXlsx">📤 تصدير الطلاب مع البطاقات (Excel)</button>
+      <button class="btn" id="stExportCsv">CSV</button>
     </div>
     <table><thead><tr><th>#</th><th></th><th>الاسم</th><th>الصف</th><th>رقم البطاقة</th><th>إجراءات</th></tr></thead>
     <tbody id="studentsBody"></tbody></table>
@@ -354,6 +392,7 @@
           <option value="admin">مدير (يرى كل شيء)</option>
         </select>
       </label>
+      <label class="check" id="usCanStWrap"><input type="checkbox" id="usCanSt"> يسمح له بإضافة طلابه وبطاقاتهم (يرى ويعدّل الطلاب الذين أضافهم فقط)</label>
       <label>بطاقات المدرّسين (اختياري — يمكن أكثر من بطاقة لنفس المستخدم، وأي واحدة تؤكّد الحذف بدل كلمة المرور)
         <input id="usCard" autocomplete="off" placeholder="اضغط «قراءة البطاقة» ثم مرّر بطاقة كل أستاذ"> 
       </label>

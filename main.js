@@ -79,7 +79,7 @@ function loadDb() {
 
 /** نسخة آمنة للواجهة: بدون كلمات المرور المجزّأة (salt/hash). */
 function publicDb(d) {
-  d.users = d.users.map((u) => ({ id: u.id, username: u.username, name: u.name, role: u.role, createdAt: u.createdAt, cardUid: u.cardUid || '' }));
+  d.users = d.users.map((u) => ({ id: u.id, username: u.username, name: u.name, role: u.role, createdAt: u.createdAt, cardUid: u.cardUid || '', canStudents: !!u.canStudents }));
   return d;
 }
 
@@ -138,7 +138,7 @@ ipcMain.handle('auth:login', (_e, username, password) => {
   const d = loadDb();
   const u = d.users.find((x) => x.username.toLowerCase() === String(username || '').trim().toLowerCase());
   if (!u || !verifyPassword(password, u.salt, u.hash)) return { ok: false };
-  return { ok: true, user: { id: u.id, username: u.username, name: u.name, role: u.role } };
+  return { ok: true, user: { id: u.id, username: u.username, name: u.name, role: u.role, canStudents: !!u.canStudents } };
 });
 
 /** الدخول ببطاقة المدرّس (للمدرّسين فقط؛ المدير يدخل بكلمة المرور). */
@@ -148,7 +148,7 @@ ipcMain.handle('auth:cardLogin', (_e, uid) => {
   const u = c && d.users.find((x) => cardsOf(x.cardUid).includes(c));
   if (!u) return { ok: false, reason: 'unknown' };
   if (u.role === 'admin') return { ok: false, reason: 'admin' };
-  return { ok: true, user: { id: u.id, username: u.username, name: u.name, role: u.role } };
+  return { ok: true, user: { id: u.id, username: u.username, name: u.name, role: u.role, canStudents: !!u.canStudents } };
 });
 
 /** تأكيد عملية حذف: كلمة مرور المستخدم الحالي (أو أي مدير) أو بطاقة مدرّس. */
@@ -166,10 +166,10 @@ ipcMain.handle('auth:confirm', (_e, { userId, password, uid } = {}) => {
 
 ipcMain.handle('users:list', () => {
   const d = loadDb();
-  return d.users.map((u) => ({ id: u.id, username: u.username, name: u.name, role: u.role, createdAt: u.createdAt, cardUid: u.cardUid || '' }));
+  return d.users.map((u) => ({ id: u.id, username: u.username, name: u.name, role: u.role, createdAt: u.createdAt, cardUid: u.cardUid || '', canStudents: !!u.canStudents }));
 });
 
-ipcMain.handle('users:create', (_e, { username, password, name, role, cardUid }) => {
+ipcMain.handle('users:create', (_e, { username, password, name, role, cardUid, canStudents }) => {
   const d = loadDb();
   username = String(username || '').trim();
   if (!username || !password) return { ok: false, error: 'missing' };
@@ -178,17 +178,18 @@ ipcMain.handle('users:create', (_e, { username, password, name, role, cardUid })
   const cc = cardConflict(d, cardUid, '');
   if (cc) return { ok: false, error: 'card_' + cc };
   const { salt, hash } = hashPassword(password);
-  d.users.push({ id: crypto.randomUUID(), username, name: name || username, role: role === 'admin' ? 'admin' : 'teacher', salt, hash, createdAt: Date.now(), cardUid });
+  d.users.push({ id: crypto.randomUUID(), username, name: name || username, role: role === 'admin' ? 'admin' : 'teacher', salt, hash, createdAt: Date.now(), cardUid, canStudents: role !== 'admin' && !!canStudents });
   saveDb(d);
   return { ok: true };
 });
 
-ipcMain.handle('users:update', (_e, { id, name, role, cardUid }) => {
+ipcMain.handle('users:update', (_e, { id, name, role, cardUid, canStudents }) => {
   const d = loadDb();
   const u = d.users.find((x) => x.id === id);
   if (!u) return { ok: false };
   if (name !== undefined) u.name = name;
   if (role !== undefined) u.role = role === 'admin' ? 'admin' : 'teacher';
+  if (canStudents !== undefined) u.canStudents = u.role !== 'admin' && !!canStudents;
   if (cardUid !== undefined) {
     const c = normCards(cardUid);
     const cc = cardConflict(d, c, id);
@@ -430,8 +431,8 @@ ipcMain.handle('lan:ping', async (_e, id) => {
 ipcMain.handle('lan:call', async (_e, { id, method, path: p, body }) => {
   const d = lanLoad().find((x) => x.id === id);
   if (!d) return { status: 0, error: 'الجهاز غير موجود' };
-  if (!/^\/api\/(schedule(\/(save|delete|replace))?|users(\/(save|delete))?|live|report)$/.test(String(p))) return { status: 0, error: 'مسار غير مسموح' };
-  return lanHttp(d.host, d.port, decTok(d.tok), method === 'POST' ? 'POST' : 'GET', p, body || null, p === '/api/report' ? 60000 : 8000);
+  if (!/^\/api\/(schedule(\/(save|delete|replace))?|users(\/(save|delete))?|students(\/import)?|live|report)$/.test(String(p))) return { status: 0, error: 'مسار غير مسموح' };
+  return lanHttp(d.host, d.port, decTok(d.tok), method === 'POST' ? 'POST' : 'GET', p, body || null, p === '/api/report' ? 60000 : p === '/api/students/import' ? 30000 : 8000);
 });
 ipcMain.handle('lan:scan', () => lanScan());
 

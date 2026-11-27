@@ -129,17 +129,27 @@ const dvItemsOfOwner = () => (dvData ? dvData.items.filter((x) => x.ownerId === 
   .slice().sort((a, b) => a.day - b.day || a.start.localeCompare(b.start));
 
 function drawItems() {
-  const list = dvItemsOfOwner();
+  const all = dvItemsOfOwner();
+  const fd = $('#dvFilterDay').value, by = $('#dvSortBy').value;
+  const ar = (x, y) => String(x || '').localeCompare(String(y || ''), 'ar');
+  let list = fd === 'all' ? all.slice() : all.filter((s) => String(s.day) === fd);
+  if (by === 'time') list.sort((a, b) => a.start.localeCompare(b.start) || a.day - b.day);
+  else if (by === 'subject') list.sort((a, b) => ar(a.subject, b.subject) || a.day - b.day || a.start.localeCompare(b.start));
+  else if (by === 'group') list.sort((a, b) => ar(a.group, b.group) || a.day - b.day || a.start.localeCompare(b.start));
+  else list.sort((a, b) => a.day - b.day || a.start.localeCompare(b.start));
+  $('#dvCount').textContent = `${list.length} من ${all.length} حصة`;
   $('#dvItems').innerHTML = list.length
     ? list.map((s, i) => `<tr>
         <td>${i + 1}</td><td>${DAY_NAMES[s.day]}</td><td>${esc(s.subject)}</td><td>${esc(s.group) || 'الكل'}</td>
-        <td>${s.start} – ${s.endEff}</td><td>${s.lateMin} د</td><td>${s.auto ? '⚡' : '—'}</td>
+        <td><span dir="ltr" style="unicode-bidi:isolate">${s.start} – ${s.endEff}</span></td><td>${s.lateMin} د</td><td>${s.auto ? '⚡' : '—'}</td>
         <td>
           <button class="btn sm" data-act="edit" data-id="${esc(s.id)}">تعديل</button>
           <button class="btn sm danger" data-act="del" data-id="${esc(s.id)}">حذف</button>
         </td></tr>`).join('')
-    : '<tr><td colspan="8">لا توجد حصص لهذا المستخدم.</td></tr>';
+    : `<tr><td colspan="8">${all.length ? 'لا توجد حصص في هذا اليوم.' : 'لا توجد حصص لهذا المستخدم.'}</td></tr>`;
 }
+$('#dvFilterDay').addEventListener('change', drawItems);
+$('#dvSortBy').addEventListener('change', drawItems);
 
 function resetDvForm() {
   $('#dvForm').reset(); $('#dvId').value = ''; $('#dvLate').value = 10; $('#dvAuto').checked = true;

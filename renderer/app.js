@@ -9,6 +9,9 @@ const $ = (s) => document.querySelector(s);
 let db = { students: [], attendance: [], sessions: [], users: [], schedule: [], settings: {} };
 let currentUser = null;
 const isAdmin = () => currentUser && currentUser.role === 'admin';
+const canStudents = () => !!currentUser && (currentUser.role === 'admin' || !!currentUser.canStudents);
+const myStudents = () => isAdmin() ? db.students : db.students.filter((s) => s.createdBy === currentUser.id);
+const canEditStudent = (s) => isAdmin() || (canStudents() && s.createdBy === currentUser.id);
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pad = (n) => String(n).padStart(2, '0');
@@ -61,7 +64,7 @@ const statusBadge = (s) => s === 'late'
 /* ---------- التبويبات ---------- */
 document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 function switchTab(name) {
-  const allowed = isAdmin() ? ['scan', 'schedule', 'students', 'log', 'reports', 'users', 'live', 'pull', 'devices', 'audit', 'settings'] : ['scan', 'schedule', 'log', 'reports'];
+  const allowed = isAdmin() ? ['scan', 'schedule', 'students', 'log', 'reports', 'users', 'live', 'pull', 'devices', 'audit', 'settings'] : ['scan', 'schedule', ...(canStudents() ? ['students'] : []), 'log', 'reports'];
   if (!allowed.includes(name)) name = 'scan';
   document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === name));
   document.querySelectorAll('.panel').forEach((x) => x.classList.toggle('active', x.id === name));
@@ -80,7 +83,7 @@ function switchTab(name) {
 function applyRoleNav() {
   document.querySelectorAll('.tab').forEach((btn) => {
     const roles = (btn.dataset.roles || '').split(',');
-    btn.hidden = !roles.includes(currentUser.role);
+    btn.hidden = !roles.includes(currentUser.role) || (btn.dataset.tab === 'students' && !canStudents());
   });
   $('#whoAmI').textContent = `${currentUser.name} (${currentUser.role === 'admin' ? 'مدير' : 'مدرّس'})`;
 }
@@ -568,12 +571,28 @@ $('#stImportBtn').addEventListener('click', async () => {
   r.rows.forEach((row) => {
     let cardUid = normUid(row.cardUid);
     if (cardUid && (teacherCards.has(cardUid) || db.students.some((s) => s.cardUid === cardUid))) { cardUid = ''; uidConflicts++; }
-    db.students.push({ id: uid(), name: row.name, grade: row.grade || '', cardUid, photo: '', createdAt: Date.now() });
+    db.students.push({ id: uid(), name: row.name, grade: row.grade || '', cardUid, photo: '', createdAt: Date.now(), createdBy: currentUser.id });
     added++;
   });
   audit('استيراد طلاب', `${added} طالب من ملف`);
   persist(); renderStudents();
   toast(`تمت إضافة ${added} طالب${uidConflicts ? ` (تم تجاهل رقم البطاقة لـ ${uidConflicts} بسبب التكرار)` : ''}`);
+});
+
+/* تصدير الطلاب مع أرقام البطاقات (نفس أعمدة الاستيراد ليمكن إعادة استيراده) */
+function studentsRows() {
+  const list = [...myStudents()].sort((x, y) => String(x.grade || '').localeCompare(String(y.grade || ''), 'ar') || String(x.name).localeCompare(String(y.name), 'ar'));
+  return [['#', 'اسم الطالب', 'الصف', 'رقم البطاقة'], ...list.map((s, i) => [i + 1, s.name, s.grade || '', s.cardUid || ''])];
+}
+$('#stExportXlsx').addEventListener('click', async () => {
+  if (!myStudents().length) return toast('لا يوجد طلاب للتصدير');
+  const d = new Date().toISOString().slice(0, 10);
+  if (await api.saveXlsx(`students-${d}.xlsx`, 'الطلاب', studentsRows(), [6, 32, 18, 22], [0])) { audit('تصدير طلاب', `${db.students.length} طالب (Excel)`); persist(); toast('تم حفظ ملف الطلاب'); }
+});
+$('#stExportCsv').addEventListener('click', () => {
+  if (!myStudents().length) return toast('لا يوجد طلاب للتصدير');
+  csvDownload(`students-${new Date().toISOString().slice(0, 10)}.csv`, studentsRows());
+  audit('تصدير طلاب', `${db.students.length} طالب (CSV)`); persist();
 });
 
 $('#studentForm').addEventListener('submit', async (e) => {
@@ -587,6 +606,7 @@ $('#studentForm').addEventListener('submit', async (e) => {
   if (cardUid && (await api.usersList()).some((u) => cardsOf(u.cardUid).includes(cardUid))) return toast('هذه البطاقة مخصّصة لمدرّس');
   if (id) {
     const s = db.students.find((x) => x.id === id);
+    if (!s || !canEditStudent(s)) return toast('لا تملك صلاحية تعديل هذا الطالب');
     const ch = [];
     if (s.name !== name) ch.push(`الاسم: ${s.name} ← ${name}`);
     if (s.grade !== grade) ch.push(`الصف: ${s.grade} ← ${grade}`);
@@ -596,15 +616,74 @@ $('#studentForm').addEventListener('submit', async (e) => {
     Object.assign(s, { name, grade, cardUid, photo });
     db.attendance.forEach((a) => { if (a.studentId === id) { a.studentName = name; a.grade = grade; } });
   } else {
-    db.students.push({ id: uid(), name, grade, cardUid, photo, createdAt: Date.now() });
+    db.students.push({ id: uid(), name, grade, cardUid, photo, createdAt: Date.now(), createdBy: currentUser.id });
     audit('إضافة طالب', `${name} — ${grade || 'بدون صف'}${cardUid ? ' — بطاقة ' + cardUid : ''}`);
   }
   persist(); resetStudentForm(); renderStudents(); toast('تم الحفظ');
 });
 
+/* ---------- إرسال الطلاب وبطاقاتهم إلى مرحلة في هواتف الأندرويد (للمدير) ---------- */
+async function fillStSend() {
+  $('#stSendBox').hidden = !isAdmin();
+  if (!isAdmin()) return;
+  const grades = [...new Set(db.students.map((s) => s.grade || ''))].sort((x, y) => x.localeCompare(y, 'ar'));
+  const cur = $('#stSendGrade').value;
+  $('#stSendGrade').innerHTML = `<option value="__all">كل الطلاب (${db.students.length})</option>` +
+    grades.map((g) => `<option value="${esc(g)}">${esc(g || 'بدون صف')} (${db.students.filter((s) => (s.grade || '') === g).length})</option>`).join('');
+  if (cur && [...$('#stSendGrade').options].some((o) => o.value === cur)) $('#stSendGrade').value = cur;
+  $('#stSendAsList').innerHTML = grades.filter(Boolean).map((g) => `<option value="${esc(g)}">`).join('');
+  const devs = await api.lanList();
+  const had = new Set([...document.querySelectorAll('.stSendDev:checked')].map((c) => c.value));
+  $('#stSendDevices').innerHTML = devs.length
+    ? devs.map((d) => `<label class="check"><input type="checkbox" class="stSendDev" value="${esc(d.id)}" ${had.has(d.id) ? 'checked' : ''}> ${esc(d.name)} <span dir="ltr">(${esc(d.host)})</span></label>`).join('')
+    : '<span class="hint">لا توجد هواتف مضافة — أضفها من تبويب «الأجهزة».</span>';
+  updateStSendCount();
+}
+function stSendList() {
+  const g = $('#stSendGrade').value;
+  return db.students.filter((s) => g === '__all' || (s.grade || '') === g);
+}
+function updateStSendCount() {
+  const n = stSendList().length, w = stSendList().filter((s) => s.cardUid).length;
+  $('#stSendCount').textContent = `${n} طالب (${w} منهم ببطاقة)`;
+}
+$('#stSendGrade').addEventListener('change', () => { updateStSendCount(); if (!$('#stSendAs').value && $('#stSendGrade').value !== '__all') $('#stSendAs').placeholder = $('#stSendGrade').value || 'مثال: الصف الأول'; });
+$('#stSendGo').addEventListener('click', async () => {
+  if (!isAdmin()) return;
+  const list = stSendList();
+  const devIds = [...document.querySelectorAll('.stSendDev:checked')].map((c) => c.value);
+  if (!list.length) return toast('لا يوجد طلاب في هذا الاختيار');
+  if (!devIds.length) return toast('حدّد هاتفاً واحداً على الأقل');
+  const grade = $('#stSendAs').value.trim();
+  const out = $('#stSendOut'); out.textContent = '⏳ جارٍ الإرسال...';
+  const devs = await api.lanList();
+  const rows = [];
+  for (const id of devIds) {
+    const dev = devs.find((d) => d.id === id); const dn = dev ? dev.name : id;
+    let added = 0, updated = 0, same = 0, skipped = [], err = '';
+    for (let i = 0; i < list.length && !err; i += 300) {
+      const chunk = list.slice(i, i + 300).map((s) => ({ name: s.name, grade: s.grade || '', cardUid: s.cardUid || '' }));
+      const r = await api.lanCall({ id, method: 'POST', path: '/api/students/import', body: { students: chunk, grade } });
+      if (r.status === 200 && r.data && r.data.ok) { added += r.data.added; updated += r.data.updated; same += r.data.same; skipped = skipped.concat(r.data.skipped || []); }
+      else if (r.status === 404) err = 'نسخة الأندرويد قديمة — ثبّت النسخة الأحدث';
+      else if (r.status === 401) err = 'رمز الاتصال غير صحيح';
+      else err = (r.data && r.data.error) || r.error || ('خطأ ' + r.status);
+    }
+    rows.push({ dn, added, updated, same, skipped, err });
+    if (!err) audit('إرسال طلاب إلى هاتف', `${dn} — ${added} جديد، ${updated} محدَّث${grade ? ' — المرحلة: ' + grade : ''}`);
+  }
+  persist();
+  const ok = rows.filter((x) => !x.err).length;
+  out.innerHTML = `<b>تم ${ok} من ${rows.length}</b><br>` + rows.map((x) => x.err
+    ? `❌ ${esc(x.dn)} — ${esc(x.err)}`
+    : `✅ ${esc(x.dn)} — ${x.added} جديد، ${x.updated} محدَّث، ${x.same} دون تغيير` + (x.skipped.length ? `<br>&nbsp;&nbsp;⚠️ تُخطّي ${x.skipped.length}: ` + x.skipped.slice(0, 5).map((k) => esc(k.name) + ' (' + esc(k.reason) + ')').join('، ') + (x.skipped.length > 5 ? '…' : '') : '')).join('<br>');
+  toast(ok === rows.length ? 'تم إرسال الطلاب إلى الهواتف' : 'اكتمل الإرسال مع أخطاء — انظر التفاصيل');
+});
+
 function renderStudents() {
+  fillStSend();
   const q = $('#stSearch').value.trim().toLowerCase();
-  const list = db.students.filter((s) => !q || [s.name, s.grade, s.cardUid].some((v) => String(v || '').toLowerCase().includes(q)));
+  const list = myStudents().filter((s) => !q || [s.name, s.grade, s.cardUid].some((v) => String(v || '').toLowerCase().includes(q)));
   $('#studentsBody').innerHTML = list.length
     ? list.map((s, i) => `<tr>
         <td>${i + 1}</td>
@@ -613,8 +692,8 @@ function renderStudents() {
         <td class="ltr">${esc(s.cardUid) || '— بدون بطاقة —'}</td>
         <td>
           <button class="btn sm" data-act="manual" data-id="${s.id}">حضور يدوي</button>
-          <button class="btn sm" data-act="edit" data-id="${s.id}">تعديل</button>
-          <button class="btn sm danger" data-act="del" data-id="${s.id}">حذف</button>
+          ${canEditStudent(s) ? `<button class="btn sm" data-act="edit" data-id="${s.id}">تعديل</button>
+          <button class="btn sm danger" data-act="del" data-id="${s.id}">حذف</button>` : ''}
         </td></tr>`).join('')
     : '<tr><td colspan="6" class="empty">لا يوجد طلاب</td></tr>';
 }
@@ -622,6 +701,7 @@ function renderStudents() {
 $('#studentsBody').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   const s = db.students.find((x) => x.id === b.dataset.id); if (!s) return;
+  if ((b.dataset.act === 'edit' || b.dataset.act === 'del') && !canEditStudent(s)) return toast('لا تملك صلاحية تعديل هذا الطالب');
   if (b.dataset.act === 'edit') {
     resetStudentForm();
     $('#stId').value = s.id; $('#stName').value = s.name; $('#stGrade').value = s.grade; $('#stUid').value = s.cardUid || '';
@@ -1013,7 +1093,10 @@ $('#authOk').addEventListener('click', authSubmitPass);
 $('#authCancel').addEventListener('click', () => closeAuth(false));
 
 /* ---------- المستخدمون ---------- */
+function syncCanSt() { $('#usCanStWrap').hidden = $('#usRole').value === 'admin'; }
+$('#usRole').addEventListener('change', syncCanSt);
 function resetUserForm() {
+  setTimeout(() => { $('#usCanSt').checked = false; syncCanSt(); });
   $('#userForm').reset(); $('#usId').value = '';
   $('#usUsername').disabled = false;
   $('#usPass').required = true;
@@ -1043,10 +1126,11 @@ $('#userForm').addEventListener('submit', async (e) => {
   const role = $('#usRole').value;
   const pass = $('#usPass').value;
   const cardUid = cardsOf($('#usCard').value).join(',');
+  const canSt = role === 'teacher' && $('#usCanSt').checked;
   const cardErr = (r) => r.error === 'card_student' ? 'هذه البطاقة مسجّلة لطالب' : r.error === 'card_user' ? 'هذه البطاقة مسجّلة لمستخدم آخر' : null;
   if (id) {
     const before = (JSON.parse($('#usersBody').dataset.cache || '[]').find((x) => x.id === id) || {}).cardUid || '';
-    const r = await api.userUpdate({ id, name, role, cardUid });
+    const r = await api.userUpdate({ id, name, role, cardUid, canStudents: canSt });
     if (!r.ok) return toast(cardErr(r) || 'تعذّر التحديث');
     if (pass) {
       const r2 = await api.userResetPassword({ id, password: pass });
@@ -1057,7 +1141,7 @@ $('#userForm').addEventListener('submit', async (e) => {
     toast('تم التحديث');
   } else {
     if (!pass) return toast('كلمة المرور مطلوبة');
-    const r = await api.userCreate({ username, password: pass, name, role, cardUid });
+    const r = await api.userCreate({ username, password: pass, name, role, cardUid, canStudents: canSt });
     if (!r.ok) return toast(r.error === 'exists' ? 'اسم المستخدم مستخدم بالفعل' : (cardErr(r) || 'تعذّر الإنشاء'));
     audit('إنشاء مستخدم', `@${username} (${role === 'admin' ? 'مدير' : 'مدرّس'})${cardUid ? ' — مع ' + cardsOf(cardUid).length + ' بطاقة' : ''}`);
     toast('تم إنشاء المستخدم');
@@ -1075,7 +1159,7 @@ async function renderUsers() {
   $('#usersBody').innerHTML = list.length
     ? list.map((u, i) => `<tr>
         <td><input type="checkbox" class="usSel" value="${esc(u.id)}" title="تحديد للإرسال إلى الهواتف"></td><td class="ltr">${esc(u.username)}</td><td>${esc(u.name)}${u.cardUid ? ' 💳' + (cardsOf(u.cardUid).length > 1 ? '×' + cardsOf(u.cardUid).length : '') : ''}</td>
-        <td>${u.role === 'admin' ? 'مدير' : 'مدرّس'}</td>
+        <td>${u.role === 'admin' ? 'مدير' : 'مدرّس' + (u.canStudents ? ' 👨‍🎓' : '')}</td>
         <td>
           <button class="btn sm" data-act="edit" data-id="${u.id}">تعديل</button>
           ${u.id === 'admin' ? '' : `<button class="btn sm danger" data-act="del" data-id="${u.id}">حذف</button>`}
@@ -1146,7 +1230,7 @@ $('#usersBody').addEventListener('click', async (e) => {
   const list = JSON.parse($('#usersBody').dataset.cache || '[]');
   const u = list.find((x) => x.id === b.dataset.id); if (!u) return;
   if (b.dataset.act === 'edit') {
-    $('#usId').value = u.id; $('#usUsername').value = u.username; $('#usName').value = u.name; $('#usRole').value = u.role; $('#usCard').value = cardsOf(u.cardUid).join(',');
+    $('#usId').value = u.id; $('#usUsername').value = u.username; $('#usName').value = u.name; $('#usRole').value = u.role; $('#usCard').value = cardsOf(u.cardUid).join(','); $('#usCanSt').checked = !!u.canStudents; syncCanSt();
     $('#usUsername').disabled = true;
     $('#usPass').required = false;
     $('#usPassWrap').querySelector('input').placeholder = 'اتركه فارغاً لعدم التغيير';
