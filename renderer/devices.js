@@ -245,7 +245,7 @@ async function loadPhoneUsers() {
   if (r.status !== 200 || !r.data || !r.data.ok) { $('#dvUsers').innerHTML = `<tr><td colspan="5">${esc(dvErr(r))}</td></tr>`; return; }
   dvPhoneUsers = r.data.users;
   $('#dvUsers').innerHTML = dvPhoneUsers.map((u) => `<tr>
-    <td dir="ltr">${esc(u.username)}</td><td>${esc(u.name)}</td><td>${u.role === 'admin' ? 'مدير' : 'مدرّس'}</td>
+    <td dir="ltr">${esc(u.username)}</td><td>${esc(u.name)}</td><td>${u.role === 'admin' ? 'مدير' : 'مدرّس' + (u.canStudents ? ' 🎓' : '')}</td>
     <td>${u.cardUid ? '💳×' + u.cardUid.split(',').filter(Boolean).length : '—'}</td>
     <td><button class="btn sm" data-act="upw" data-id="${esc(u.id)}">🔑 كلمة المرور</button>
         <button class="btn sm" data-act="uedit" data-id="${esc(u.id)}">تعديل</button>
@@ -259,7 +259,7 @@ $('#dvUsers').addEventListener('click', async (e) => {
     $('#dvPw1').value = ''; $('#dvPw2').value = ''; $('#dvPwErr').textContent = '';
     $('#dvPwDlg').showModal(); $('#dvPw1').focus();
   } else if (b.dataset.act === 'uedit') {
-    $('#dvuUsername').value = u.username; $('#dvuName').value = u.name; $('#dvuRole').value = u.role; $('#dvuPass').value = '';
+    $('#dvuUsername').value = u.username; $('#dvuName').value = u.name; $('#dvuRole').value = u.role; $('#dvuCanSt').checked = !!u.canStudents; $('#dvuPass').value = '';
     $('#dvuPass').focus();
   } else if (confirm(`حذف المستخدم «${u.name}» من الهاتف؟`)) {
     let r = await dvCall(dvCur, 'POST', '/api/users/delete', { id: u.id });
@@ -275,7 +275,7 @@ $('#dvUserForm').addEventListener('submit', async (e) => {
   const username = $('#dvuUsername').value.trim();
   const exists = dvPhoneUsers.some((u) => u.username.toLowerCase() === username.toLowerCase());
   if (!exists && !$('#dvuPass').value) return toast('كلمة المرور مطلوبة للمستخدم الجديد');
-  const body = { id: dvCur, username, name: $('#dvuName').value, role: $('#dvuRole').value, password: $('#dvuPass').value };
+  const body = { id: dvCur, username, name: $('#dvuName').value, role: $('#dvuRole').value, password: $('#dvuPass').value, canStudents: $('#dvuRole').value !== 'admin' && $('#dvuCanSt').checked };
   let r = await api.lanPhoneUser(body);
   if (r.status === 409 && lastAdminErr(r) && confirm('هذا آخر مدير في الهاتف. بعد تحويله إلى مدرّس لن يوجد مدير على الهاتف إلى أن ترسل مديراً من الحاسوب (إنشاء مستخدم بدور «مدير»).\nهل تريد تغيير الصلاحية فعلاً؟'))
     r = await api.lanPhoneUser({ ...body, force: true });

@@ -452,7 +452,7 @@ ipcMain.handle('lan:pushUsers', async (_e, { deviceIds, userIds }) => {
   for (const dev of devs) {
     for (const u of users) {
       const r = await lanHttp(dev.host, dev.port, decTok(dev.tok), 'POST', '/api/users/save',
-        { user: { id: u.id, username: u.username, name: u.name, role: u.role, salt: u.salt, hash: u.hash, cardUid: u.cardUid || '' } }, 15000);
+        { user: { id: u.id, username: u.username, name: u.name, role: u.role, salt: u.salt, hash: u.hash, cardUid: u.cardUid || '', canStudents: u.role !== 'admin' && !!u.canStudents } }, 15000);
       const ok = r.status === 200 && r.data && r.data.ok;
       results.push({ device: dev.name, username: u.username, ok, created: ok && !!r.data.created,
         error: ok ? '' : (r.error || (r.data && r.data.error) || ('رمز ' + r.status)) });
@@ -466,12 +466,13 @@ ipcMain.handle('lan:pushUsers', async (_e, { deviceIds, userIds }) => {
 });
 
 /* إنشاء/تغيير كلمة مرور مستخدم مباشرة على الهاتف (يجزّئ الحاسوب كلمة المرور قبل الإرسال) */
-ipcMain.handle('lan:phoneUser', async (_e, { id, username, name, role, password, cardUid, force }) => {
+ipcMain.handle('lan:phoneUser', async (_e, { id, username, name, role, password, cardUid, force, canStudents }) => {
   const dev = lanLoad().find((x) => x.id === id);
   if (!dev) return { status: 0, error: 'الجهاز غير موجود' };
   const user = { username: String(username || '').trim(), name: String(name || '').trim(), role: role === 'admin' ? 'admin' : 'teacher' };
   if (password) { const h = hashPasswordPhone(String(password)); user.salt = h.salt; user.hash = h.hash; }
   if (cardUid !== undefined) user.cardUid = normCards(cardUid);
+  if (canStudents !== undefined) user.canStudents = !!canStudents;
   if (force) user.force = true;
   return lanHttp(dev.host, dev.port, decTok(dev.tok), 'POST', '/api/users/save', { user }, 15000);
 });
